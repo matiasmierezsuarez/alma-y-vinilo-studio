@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "formulas": {
+    "MOMENT_FIRST": {
+      "id": "MOMENT_FIRST",
+      "name": "Moment first",
+      "template": "[Moment] | [Music + Benefit] | [Scripture]"
+    },
+    "EMOTION_FIRST": {
+      "id": "EMOTION_FIRST",
+      "name": "Emotion first",
+      "template": "[Emotional Promise] | [Moment + Music] | [Scripture]"
+    },
+    "MUSIC_FIRST": {
+      "id": "MUSIC_FIRST",
+      "name": "Music first",
+      "template": "[Christian Jazz] | [Moment] | [Scripture + Benefit]"
+    }
+  },
+  "descriptionStructure": [
+    "HOOK",
+    "WHAT THIS IS",
+    "SCRIPTURE FOUNDATION",
+    "USE CASES",
+    "TRACKLIST",
+    "AI / HUMAN CREATION NOTE",
+    "CTA",
+    "HASHTAGS"
+  ]
+}

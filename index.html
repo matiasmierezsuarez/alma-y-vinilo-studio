@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Alma y Vinilo Studio 2</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">AV</span>
+      <div>
+        <h1>Alma y Vinilo Studio 2</h1>
+        <p class="tagline">Una decisión a la vez.</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <label class="ai-toggle" title="Generar con IA (modelo local o nube) o sin IA (rápido)">
+        <input id="btn-ai-mode" type="checkbox" checked>
+        <span>IA</span>
+      </label>
+      <button id="btn-llm-config" class="btn btn-ghost-inv" type="button">Config IA</button>
+      <button id="btn-nuevo-ws" class="btn btn-primary" type="button">Nuevo workspace</button>
+      <span id="api-status" class="api-status" title="Estado del servidor">…</span>
+    </div>
+  </header>
+
+  <main id="app">
+    <section id="screen-workspaces" class="screen">
+      <h2>Workspaces</h2>
+      <div id="workspace-list" class="workspace-list"></div>
+      <button id="btn-create-first" class="btn btn-primary" type="button">Crear primer workspace</button>
+    </section>
+  </main>
+
+  <template id="stage-shell">
+    <section class="screen stage-screen">
+      <aside class="stage-rail">
+        <div class="rail-title">Progreso del workspace</div>
+        <ol id="stage-list" class="stage-list"></ol>
+        <div class="rail-status" id="rail-status"></div>
+      </aside>
+      <div class="stage-body">
+        <div class="stage-head">
+          <h2 id="stage-title"></h2>
+          <p id="stage-subtitle"></p>
+        </div>
+        <div id="stage-content" class="stage-content"></div>
+        <div class="stage-nav">
+          <button id="btn-back" class="btn btn-ghost" type="button">◀ EDIT</button>
+          <div class="nav-hint" id="nav-hint"></div>
+          <button id="btn-next" class="btn btn-primary" type="button">NEXT ▶</button>
+        </div>
+      </div>
+    </section>
+  </template>
+
+  <div id="llm-modal" class="modal" hidden>
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3>Configuración de IA</h3>
+        <button id="btn-llm-close" class="btn btn-ghost" type="button">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="llm-status" class="llm-status"></div>
+        <div class="field">
+          <label>Proveedor</label>
+          <select id="f-provider">
+            <option value="auto">Auto: local primero, nube como respaldo</option>
+            <option value="local">Solo local (Ollama)</option>
+            <option value="cloud">Solo nube (OpenRouter)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Modelo de nube (OpenRouter)</label>
+          <input id="f-cloud" type="text" list="dl-cloud" placeholder="deepseek/deepseek-chat:free">
+          <datalist id="dl-cloud"></datalist>
+          <p class="hint">Si se deja vacío, se usa el primer modelo :free disponible.</p>
+        </div>
+        <div class="field">
+          <label>Modelo local (Ollama)</label>
+          <input id="f-ollama" type="text" list="dl-local" placeholder="qwen3:8b">
+          <datalist id="dl-local"></datalist>
+        </div>
+        <div class="field">
+          <label>API Key de OpenRouter</label>
+          <div class="row" style="align-items:center">
+            <input id="f-key" type="password" placeholder="sk-or-v1-…" autocomplete="off" style="flex:1">
+            <button id="btn-key-save" class="btn btn-primary" type="button">Guardar key</button>
+            <button id="btn-key-del" class="btn btn-danger" type="button">Borrar</button>
+          </div>
+        </div>
+        <p class="hint">La key se guarda en <code>openrouter.key</code> junto a la app (nunca se expone en la interfaz).</p>
+      </div>
+      <div class="modal-foot">
+        <button id="btn-llm-save" class="btn btn-primary" type="button">Guardar configuración</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

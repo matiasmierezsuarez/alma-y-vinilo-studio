@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "identity": {
+    "characters": [
+      {
+        "id": "CHAR_01",
+        "name": "Recurring character 1",
+        "description": "Calm, warm, middle-aged figure with a gentle presence; consistent facial features and clothing style across every thumbnail."
+      },
+      {
+        "id": "CHAR_02",
+        "name": "Recurring character 2",
+        "description": "Calm, warm companion figure; consistent facial features and clothing style across every thumbnail."
+      }
+    ],
+    "palette": ["deep amber", "cream", "warm brown", "soft gold", "deep blue shadow"],
+    "lightingLanguage": "warm window light, soft and cozy, intimate, golden-hour glow",
+    "environmentLanguage": "coffeehouse, vinyl record shop, cozy room, warm wooden textures",
+    "framing": "cinematic medium shot, shallow depth of field, two characters visible",
+    "atmosphere": "warm, vinyl-inspired, calm, inviting"
+  },
+  "thumbnailFormats": {
+    "T1": "characters only, no text",
+    "T2": "two recurring characters plus 2-3 short words",
+    "T3": "two recurring characters plus a single moment word"
+  },
+  "masterReference": {
+    "role": "THUMBNAIL_MASTER",
+    "assetUrl": "",
+    "locked": false
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "provider": "cloud",
+  "cloudModel": "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "ollamaModel": "qwen3:8b"
+}

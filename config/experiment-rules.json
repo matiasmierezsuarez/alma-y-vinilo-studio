@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "baseline": {
+    "bandWeak": 0.75,
+    "bandStrong": 1.25,
+    "bandOutlier": 2,
+    "labels": {
+      "WEAK": "< 0.75x",
+      "NORMAL": "0.75-1.25x",
+      "STRONG": "1.25-2x",
+      "OUTLIER": "> 2x"
+    }
+  },
+  "evidence": {
+    "SIGNAL": 1,
+    "PRELIMINARY_PATTERN": 3,
+    "STRONG_PATTERN": 5,
+    "CANDIDATE_RULE": 10
+  },
+  "recommendations": ["REPEAT", "EXPAND", "TEST", "RETIRE"],
+  "thumbnailFormats": ["T1", "T2", "T3"],
+  "diversity": {
+    "flagThreshold": 3,
+    "flag": "HIGH_REPETITION"
+  }
+}

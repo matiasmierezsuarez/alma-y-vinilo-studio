@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "seeds": {
+    "SEED_A_JAZZ_VINYL": {
+      "id": "SEED_A_JAZZ_VINYL",
+      "name": "Alma Jazz / Vinyl",
+      "basePrompt": "Slow jazz, 68 BPM, acoustic piano trio, upright bass, brushed drums, intimate coffeehouse atmosphere, warm and soothing, vinyl warmth",
+      "identityTokens": ["jazz", "acoustic", "intimate", "slow", "vinyl", "coffeehouse"],
+      "forbiddenTokens": ["edm", "aggressive", "high-energy", "high energy", "trap", "cinematic", "bombast", "rock", "pop anthemic", "dubstep", "metal"],
+      "modifiers": {
+        "moment": ["morning", "evening", "study", "prayer", "rest"],
+        "emotion": ["peaceful", "hopeful", "reflective", "grateful", "comforting"],
+        "vocal": ["instrumental", "soft male", "soft female", "soft duet", "vocal texture"],
+        "energy": ["very soft", "soft", "moderate"],
+        "environment": ["coffeehouse", "rainy window", "late-night room", "quiet morning"]
+      }
+    },
+    "SEED_B_GOSPEL_SOUL": {
+      "id": "SEED_B_GOSPEL_SOUL",
+      "name": "Alma Gospel Soul",
+      "basePrompt": "gospel and R&B, 72 BPM, guitar, bass, drums, violin, cello, soft vocal, chill",
+      "identityTokens": ["gospel", "r&b", "soul", "chill", "soft vocal", "strings"],
+      "forbiddenTokens": ["edm", "aggressive", "high-energy", "high energy", "trap", "metal", "dubstep", "hard rock", "cinematic bombast"],
+      "modifiers": {
+        "moment": ["morning", "evening", "study", "prayer", "rest"],
+        "emotion": ["peaceful", "hopeful", "reflective", "grateful", "comforting"],
+        "vocal": ["instrumental", "soft male", "soft female", "soft duet", "vocal texture"],
+        "energy": ["very soft", "soft", "moderate"],
+        "environment": ["coffeehouse", "rainy window", "late-night room", "quiet morning"]
+      }
+    }
+  }
+}
