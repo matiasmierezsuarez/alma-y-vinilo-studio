@@ -46,6 +46,9 @@ function buildThumbnailPrompt(workspaceId, opts = {}) {
     { role: 'user', content: `Moment: ${dna.moment}. Necesidad: ${dna.humanNeed}. Emoción deseada: ${dna.desiredEmotion}. Scripture: ${sc ? sc.reference : ''}. Escenario: ${JSON.stringify(dna.visualScenario)}` },
   ];
 }
+function invalidateReviewForVisual(workspaceId, sourceArtifactId) {
+  return invalidation.invalidateWorkspaceArtifacts(workspaceId, { type: 'VISUAL_ASSET_CHANGED', sourceArtifactId });
+}
 async function generate(workspaceId, opts = {}) {
   const dna = dnaModule.getLatest(workspaceId);
   if (!dna) throw new Error('Primero desarrolla el Content DNA.');
@@ -63,9 +66,17 @@ async function generate(workspaceId, opts = {}) {
     lineage: { workspaceId, contentDnaVersion: dna.version, scriptureId: scripture.getApproved(workspaceId)?.id || null, visualMasterReferenceId: master ? master.id : null, visualAssetVersion: version },
     createdAt: new Date().toISOString(),
   });
+  invalidateReviewForVisual(workspaceId, asset.id);
   db.persist();
   return asset;
 }
-function recordAsset(assetId, { assetUrl }) { const asset = db.get('visual_assets', assetId); if (!asset) throw new Error('Activo visual no encontrado.'); return db.update('visual_assets', assetId, { assetUrl, status: assetUrl ? 'APPROVED' : asset.status }); }
+function recordAsset(assetId, { assetUrl }) {
+  const asset = db.get('visual_assets', assetId);
+  if (!asset) throw new Error('Activo visual no encontrado.');
+  const updated = db.update('visual_assets', assetId, { assetUrl, status: assetUrl ? 'APPROVED' : asset.status });
+  invalidateReviewForVisual(asset.workspaceId, assetId);
+  db.persist();
+  return updated;
+}
 function listForWorkspace(workspaceId) { return db.where('visual_assets', (v) => v.workspaceId === workspaceId).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)); }
 module.exports = { generate, recordAsset, listForWorkspace, getMasterReference, getReferences, setReference, setMasterLocked, visualIdentity, thumbnailTextFor };
