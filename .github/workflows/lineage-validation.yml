@@ -23,3 +23,4 @@ jobs:
           node tests/lineage.test.js
           node tests/invalidation.matrix.test.js
           node tests/publication-history.test.js
+          node tests/workspace.e2e.regression.test.js
