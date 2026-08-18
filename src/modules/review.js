@@ -1,50 +1,57 @@
 'use strict';
-/* Review Engine - publishing is blocked until review passes.
-   Status: BLOCKED | READY_FOR_REVIEW | APPROVED | REJECTED. */
+/* Review Engine - publishing is blocked until the complete artifact graph
+   is current. Review approvals are invalidated when an upstream dependency changes. */
 
 const db = require('../db');
 const dnaModule = require('./content-dna');
 const scripture = require('./scripture');
 const tracks = require('./tracks');
 const lyrics = require('./lyrics');
-const packaging = require('./packaging');
 const visual = require('./visual');
+const packaging = require('./packaging');
 
 function evaluate(workspaceId) {
   const ws = db.get('workspaces', workspaceId);
   if (!ws) throw new Error('Workspace no encontrado.');
-  const items = [];
+  const dna = dnaModule.getLatest(workspaceId);
+  const sc = scripture.getApproved(workspaceId);
   const approvedTracks = tracks.allApproved(workspaceId);
   const lyricsApproved = lyrics.approvedForWorkspace(workspaceId);
-  const musicAssets = db.where('music_generations', (m) => m.workspaceId === workspaceId && m.status === 'SUCCEEDED' && m.assetUrl);
-  const thumbnails = db.where('visual_assets', (v) => v.workspaceId === workspaceId);
+  const musicAssets = db.where('music_generations', (m) => m.workspaceId === workspaceId && m.status === 'SUCCEEDED' && m.assetUrl && m.status !== 'STALE');
+  const thumbnails = db.where('visual_assets', (v) => v.workspaceId === workspaceId && v.status !== 'STALE');
   const master = visual.getMasterReference();
   const pkg = packaging.latest(workspaceId);
+  const items = [];
 
-  /* Content */
-  items.push({ category: 'Content', id: 'dna_complete', label: 'Content DNA completo', pass: !!ws.contentDnaVersion, detail: ws.contentDnaVersion ? 'Versión ' + ws.contentDnaVersion : 'Falta desarrollar el Content DNA' });
-  items.push({ category: 'Content', id: 'scripture_approved', label: 'Scripture aprobada', pass: !!scripture.getApproved(workspaceId), detail: scripture.currentReference(workspaceId) || 'Falta aprobar Scripture' });
-  items.push({ category: 'Content', id: 'track_plan_complete', label: 'Track plan completo', pass: approvedTracks.length > 0, detail: approvedTracks.length + ' track(s) aprobados' });
-  items.push({ category: 'Content', id: 'lyrics_complete', label: 'Lyrics completas donde se requieren', pass: approvedTracks.length === 0 || lyricsApproved.length >= approvedTracks.length, detail: lyricsApproved.length + '/' + approvedTracks.length + ' tracks con lyrics aprobadas' });
-  items.push({ category: 'Content', id: 'music_assets_complete', label: 'Activos de música completos', pass: approvedTracks.length === 0 || musicAssets.length >= approvedTracks.length, detail: musicAssets.length + '/' + approvedTracks.length + ' tracks con audio registrado' });
+  items.push({ category: 'Lineage', id: 'dna_current', label: 'Content DNA actual', pass: !!dna && ws.contentDnaVersion === dna.version, detail: dna ? 'Versión ' + dna.version : 'Falta desarrollar Content DNA' });
+  items.push({ category: 'Lineage', id: 'scripture_current', label: 'Scripture aprobada y actual', pass: !!sc && sc.status === 'APPROVED' && (!sc.contentDnaVersion || !dna || sc.contentDnaVersion === dna.version), detail: sc ? sc.reference : 'Falta aprobar Scripture' });
 
-  /* Visual */
-  items.push({ category: 'Visual', id: 'master_characters_present', label: 'Personajes maestros presentes', pass: thumbnails.some((t) => /character/i.test(t.prompt || '')), detail: 'El prompt de miniatura debe mencionar los dos personajes' });
+  const staleTracks = approvedTracks.filter((t) => t.status === 'STALE' || (dna && t.contentDnaVersion !== dna.version) || (sc && t.scriptureId !== sc.id));
+  items.push({ category: 'Lineage', id: 'track_plan_current', label: 'Track Plan vigente', pass: approvedTracks.length > 0 && staleTracks.length === 0, detail: approvedTracks.length + ' track(s) aprobados y vigentes' });
+
+  const requiredTrackIds = new Set(approvedTracks.map((t) => t.id));
+  const currentLyrics = lyricsApproved.filter((l) => requiredTrackIds.has(l.trackId));
+  const missingLyrics = approvedTracks.filter((t) => !currentLyrics.some((l) => l.trackId === t.id && l.lineage && l.lineage.trackPlanVersion === t.trackPlanVersion));
+  items.push({ category: 'Lineage', id: 'lyrics_current', label: 'Lyrics vigentes', pass: approvedTracks.length > 0 && missingLyrics.length === 0, detail: `${currentLyrics.length}/${approvedTracks.length} tracks con lyrics de la versión correcta` });
+
+  const missingMusic = approvedTracks.filter((t) => !musicAssets.some((m) => m.trackId === t.id && m.status === 'SUCCEEDED' && m.lineage && m.lineage.trackPlanVersion === t.trackPlanVersion));
+  items.push({ category: 'Lineage', id: 'music_current', label: 'Música vigente', pass: approvedTracks.length > 0 && missingMusic.length === 0, detail: `${approvedTracks.length - missingMusic.length}/${approvedTracks.length} tracks con música compatible` });
+
+  items.push({ category: 'Visual', id: 'master_characters_present', label: 'Personajes maestros presentes', pass: thumbnails.some((t) => /character/i.test(t.prompt || '') || /personaj/i.test(t.prompt || '')), detail: 'El prompt de miniatura debe mencionar los dos personajes' });
   items.push({ category: 'Visual', id: 'thumbnail_generated', label: 'Miniatura generada', pass: thumbnails.some((t) => t.assetUrl), detail: thumbnails.some((t) => t.assetUrl) ? 'Activo presente' : 'Falta registrar el activo de miniatura' });
   items.push({ category: 'Visual', id: 'visual_reference_respected', label: 'Referencia visual respetada', pass: !master || master.locked, detail: master ? (master.locked ? 'Maestra bloqueada' : 'La maestra no está bloqueada') : 'No hay imagen de referencia maestra configurada' });
 
-  /* Packaging */
   items.push({ category: 'Packaging', id: 'title_present', label: 'Título presente', pass: !!(pkg && pkg.title), detail: pkg && pkg.title ? pkg.title : 'Falta generar packaging' });
   items.push({ category: 'Packaging', id: 'thumbnail_text_reviewed', label: 'Texto de miniatura revisado', pass: !!pkg, detail: pkg ? 'Revisado en packaging' : 'Falta packaging' });
   items.push({ category: 'Packaging', id: 'thumbnail_prompt_present', label: 'Prompt de miniatura presente', pass: !!(pkg && pkg.thumbnailPrompt), detail: pkg && pkg.thumbnailPrompt ? 'Presente' : 'Falta prompt de miniatura en packaging' });
-  items.push({ category: 'Packaging', id: 'description_present', label: 'Descripción presente', pass: !!(pkg && pkg.description), detail: pkg && pkg.description ? 'Presente' : 'Falta descripción' });
+  items.push({ category: 'Packaging', id: 'description_present', label: 'Descripción presente', pass: !!(pkg && pkg.description), detail: pkg && pkg.description ? 'Presente' : 'Falta generar packaging' });
   items.push({ category: 'Packaging', id: 'tags_present', label: 'Tags presentes', pass: !!(pkg && Array.isArray(pkg.tags) && pkg.tags.length), detail: pkg && pkg.tags && pkg.tags.length ? pkg.tags.length + ' tags' : 'Faltan tags' });
+  items.push({ category: 'Packaging', id: 'packaging_current', label: 'Packaging vigente', pass: !!pkg && pkg.status !== 'STALE', detail: pkg ? (pkg.status === 'STALE' ? 'Packaging obsoleto' : 'Vigente') : 'Falta packaging' });
 
-  /* Compliance */
   items.push({ category: 'Compliance', id: 'rights_metadata', label: 'Metadatos de derechos/fuente completos', pass: !!ws.rightsMetadata, detail: ws.rightsMetadata ? 'Completados' : 'Falta registrar derechos/fuente' });
   items.push({ category: 'Compliance', id: 'ai_disclosure', label: 'Divulgación IA según plataforma', pass: ws.aiDisclosure === true, detail: ws.aiDisclosure === true ? 'Declarada' : 'Falta marcar divulgación IA' });
-  items.push({ category: 'Compliance', id: 'no_fabricated_scripture', label: 'Sin citas bíblicas fabricadas', pass: !!scripture.getApproved(workspaceId), detail: 'El sistema solo almacena referencias aprobadas; no fabrica citas' });
-  items.push({ category: 'Compliance', id: 'no_missing_assets', label: 'Sin activos requeridos faltantes', pass: approvedTracks.length === 0 || (musicAssets.length >= approvedTracks.length && thumbnails.some((t) => t.assetUrl)), detail: 'Audio y miniatura registrados' });
+  items.push({ category: 'Compliance', id: 'no_fabricated_scripture', label: 'Sin citas bíblicas fabricadas', pass: !!sc, detail: sc ? 'Referencia aprobada registrada' : 'Falta Scripture aprobada' });
+  items.push({ category: 'Compliance', id: 'no_missing_assets', label: 'Sin activos requeridos faltantes', pass: approvedTracks.length > 0 && missingMusic.length === 0 && thumbnails.some((t) => t.assetUrl), detail: 'Audio y miniatura registrados' });
 
   const blocks = items.filter((i) => !i.pass);
   const status = blocks.length ? 'BLOCKED' : 'READY_FOR_REVIEW';
@@ -52,6 +59,13 @@ function evaluate(workspaceId) {
     workspaceId,
     status,
     items,
+    lineage: {
+      workspaceId,
+      contentDnaVersion: dna ? dna.version : null,
+      scriptureId: sc ? sc.id : null,
+      trackPlanVersion: approvedTracks.length ? Math.max(...approvedTracks.map((t) => t.trackPlanVersion || 0)) : null,
+      packagingVersion: pkg ? pkg.version : null,
+    },
     reviewId: workspaceId + '-' + Date.now().toString(36),
   });
   db.persist();
@@ -60,11 +74,13 @@ function evaluate(workspaceId) {
 
 function approve(workspaceId) {
   const latest = db.where('review_items', (r) => r.workspaceId === workspaceId).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
-  if (!latest || latest.status === 'BLOCKED') throw new Error('No puedes aprobar: hay bloqueos. Corrige y vuelve a evaluar.');
+  if (!latest || latest.status !== 'READY_FOR_REVIEW') throw new Error('No puedes aprobar: la revisión debe estar READY_FOR_REVIEW.');
   const row = db.insert('review_items', {
     workspaceId,
     status: 'APPROVED',
     items: latest.items,
+    lineage: latest.lineage,
+    sourceReviewId: latest.id,
     approvedAt: new Date().toISOString(),
   });
   db.update('workspaces', workspaceId, { status: 'READY' });
@@ -79,6 +95,7 @@ function reject(workspaceId, note) {
     status: 'REJECTED',
     note: note || '',
     items: latest ? latest.items : [],
+    lineage: latest ? latest.lineage : null,
     rejectedAt: new Date().toISOString(),
   });
   db.persist();
