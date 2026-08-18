@@ -25,3 +25,4 @@ jobs:
           node tests/publication-history.test.js
           node tests/workspace.e2e.regression.test.js
           node tests/workspace.acceptance.api.test.js
+          node tests/workspace.ui.contract.test.js
