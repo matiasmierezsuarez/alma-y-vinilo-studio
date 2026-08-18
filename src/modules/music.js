@@ -1,6 +1,7 @@
 'use strict';
 /* Sound Engine + Suno-compatible MusicProvider adapter. Music generations
-   retain exact upstream lineage and are invalidated when those dependencies change. */
+   retain exact upstream lineage and invalidate any previously approved review
+   when the produced artifact set changes. */
 
 const db = require('../db');
 const config = require('../config');
@@ -56,6 +57,10 @@ function composeForTrack(workspaceId, trackId, mods = {}) {
   return { seed, prompt: compose(seed, merged), constraints: merged };
 }
 
+function invalidateReviewForMusic(workspaceId, sourceArtifactId) {
+  return invalidation.invalidateWorkspaceArtifacts(workspaceId, { type: 'MUSIC_CHANGED', sourceArtifactId });
+}
+
 function generateForTrack(workspaceId, trackId, opts = {}) {
   const track = tracks.get(trackId);
   if (!track) throw new Error('Track no encontrado.');
@@ -77,7 +82,8 @@ function generateForTrack(workspaceId, trackId, opts = {}) {
       vocalMode: track.vocalMode,
       lineage: { workspaceId, contentDnaVersion: dna.version, scriptureId: sc.id, trackPlanVersion: track.trackPlanVersion, trackId, lyricsVersion: approvedLyrics.version, musicGenerationId: gen.id },
     });
-    db.update('tracks', trackId, { sunoPrompt: prompt, soundSeed: seed, vocalMode: constraints.vocal ? track.vocalMode : track.vocalMode });
+    db.update('tracks', trackId, { sunoPrompt: prompt, soundSeed: seed, vocalMode: track.vocalMode });
+    invalidateReviewForMusic(workspaceId, gen.id);
     db.persist();
     return { generationId: gen.id, seed, prompt, status: gen.status };
   });
@@ -88,7 +94,9 @@ function regenerateForTrack(workspaceId, trackId, opts = {}) { return generateFo
 function recordAsset(workspaceId, generationId, { assetUrl, duration, providerGenerationId }) {
   const gen = db.get('music_generations', generationId);
   if (!gen) throw new Error('Generación no encontrada.');
+  if (gen.workspaceId !== workspaceId) throw new Error('La generación no pertenece al Workspace.');
   const updated = musicProvider.recordAsset(generationId, { assetUrl, duration, providerGenerationId });
+  invalidateReviewForMusic(workspaceId, generationId);
   db.persist();
   return updated;
 }
