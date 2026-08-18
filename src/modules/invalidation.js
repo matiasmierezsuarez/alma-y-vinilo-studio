@@ -41,12 +41,20 @@ function buildInvalidations(workspaceId, change = {}) {
   }));
 }
 
-function markRowsStale(workspaceId, stage, reason) {
+function isSourceRow(row, stage, change) {
+  if (change.sourceArtifactId && row.id === change.sourceArtifactId) return true;
+  if (change.sourceVersion == null) return false;
+  if (stage === 'trackPlan' || stage === 'track') return Number(row.trackPlanVersion) === Number(change.sourceVersion);
+  return false;
+}
+
+function markRowsStale(workspaceId, stage, reason, change = {}) {
   const table = TABLE_BY_STAGE[stage];
   if (!table) return 0;
   const rows = db.where(table, (row) => row.workspaceId === workspaceId);
   let count = 0;
   rows.forEach((row) => {
+    if (isSourceRow(row, stage, change)) return;
     if (table === 'review_items') {
       if (['APPROVED', 'READY_FOR_REVIEW'].includes(row.status)) {
         db.update(table, row.id, { status: 'INVALIDATED', invalidatedReason: reason, invalidatedAt: new Date().toISOString() });
@@ -66,7 +74,7 @@ function invalidateWorkspaceArtifacts(workspaceId, change = {}) {
   const stages = getInvalidationImpact(change.type);
   const result = { workspaceId, reason: change.type, stages, counts: {} };
   stages.forEach((stage) => {
-    result.counts[stage] = markRowsStale(workspaceId, stage, change.type);
+    result.counts[stage] = markRowsStale(workspaceId, stage, change.type, change);
   });
   db.persist();
   return result;
