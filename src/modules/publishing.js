@@ -10,30 +10,35 @@ const dnaModule = require('./content-dna');
 const scripture = require('./scripture');
 const tracks = require('./tracks');
 
+function getById(table, id) {
+  return id ? db.get(table, id) : null;
+}
+
 function currentArtifactSet(workspaceId, reviewRow) {
-  const dna = dnaModule.getLatest(workspaceId);
-  const sc = scripture.getApproved(workspaceId);
-  const pkg = packaging.latest(workspaceId);
-  const planVersion = reviewRow.lineage ? reviewRow.lineage.trackPlanVersion : null;
-  const selectedTracks = tracks.allApproved(workspaceId).filter((t) => !planVersion || Number(t.trackPlanVersion) === Number(planVersion));
-  const thumbnails = db.where('visual_assets', (v) => v.workspaceId === workspaceId && v.assetUrl && v.status !== 'STALE').sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-  const thumbnail = thumbnails[thumbnails.length - 1] || null;
+  const lineage = reviewRow.lineage || {};
+  const dna = db.allVersions('content_dna', { name: 'workspaceId', value: workspaceId }).find((x) => Number(x.version) === Number(lineage.contentDnaVersion));
+  const sc = getById('scriptures', lineage.scriptureId);
+  const pkg = db.allVersions('packaging_versions', { name: 'workspaceId', value: workspaceId }).find((x) => Number(x.version) === Number(lineage.packagingVersion));
+  const selectedTracks = (lineage.tracks || []).map((ref) => {
+    const track = getById('tracks', ref.trackId);
+    if (!track || track.status === 'STALE' || Number(track.trackPlanVersion) !== Number(ref.trackPlanVersion)) return null;
+    const lyrics = db.where('lyrics_versions', (l) => l.trackId === ref.trackId && l.status === 'APPROVED' && Number(l.version) === Number(ref.lyricsVersion) && l.lineage && Number(l.lineage.trackPlanVersion) === Number(ref.trackPlanVersion))[0] || null;
+    const music = getById('music_generations', ref.musicGenerationId);
+    if (!lyrics || !music || music.status !== 'SUCCEEDED' || music.status === 'STALE') return null;
+    return { trackId: track.id, trackPlanVersion: track.trackPlanVersion, lyricsVersion: lyrics.version, musicGenerationId: music.id };
+  }).filter(Boolean);
+  const thumbnail = getById('visual_assets', lineage.visualAssetId);
 
   return {
     contentDnaVersion: dna ? dna.version : null,
     scriptureId: sc ? sc.id : null,
-    trackPlanVersion: planVersion,
-    tracks: selectedTracks.map((t) => {
-      const lyrics = db.where('lyrics_versions', (l) => l.trackId === t.id && l.status === 'APPROVED' && l.lineage && l.lineage.trackPlanVersion === t.trackPlanVersion).sort((a, b) => (a.version || 0) - (b.version || 0)).pop() || null;
-      const music = db.where('music_generations', (m) => m.trackId === t.id && m.status === 'SUCCEEDED' && m.lineage && m.lineage.trackPlanVersion === t.trackPlanVersion).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)).pop() || null;
-      return {
-        trackId: t.id,
-        trackPlanVersion: t.trackPlanVersion,
-        lyricsVersion: lyrics ? lyrics.version : null,
-        musicGenerationId: music ? music.id : null,
-      };
-    }),
-    visual: { assetVersion: thumbnail ? thumbnail.version : null, assetId: thumbnail ? thumbnail.id : null },
+    trackPlanVersion: lineage.trackPlanVersion || null,
+    tracks: selectedTracks,
+    visual: {
+      masterReferenceId: lineage.visualMasterReferenceId || null,
+      assetVersion: thumbnail ? thumbnail.version : null,
+      assetId: thumbnail ? thumbnail.id : null,
+    },
     packagingVersion: pkg ? pkg.version : null,
   };
 }
@@ -46,8 +51,9 @@ function publish(workspaceId, input = {}) {
   if (!rev.lineage) throw new Error('Publicación bloqueada: la revisión no tiene lineage. Vuelve a evaluar.');
 
   const artifacts = currentArtifactSet(workspaceId, rev);
-  const invalid = artifacts.tracks.some((t) => !t.lyricsVersion || !t.musicGenerationId) || !artifacts.contentDnaVersion || !artifacts.scriptureId || !artifacts.packagingVersion;
-  if (invalid) throw new Error('Publicación bloqueada: el conjunto de artefactos ya no coincide con la revisión aprobada. Vuelve a evaluar.');
+  const expectedCount = Array.isArray(rev.lineage.tracks) ? rev.lineage.tracks.length : 0;
+  const invalid = artifacts.tracks.length !== expectedCount || !artifacts.contentDnaVersion || !artifacts.scriptureId || !artifacts.packagingVersion || !artifacts.visual.assetId;
+  if (invalid) throw new Error('Publicación bloqueada: el conjunto exacto revisado ya no está disponible o fue invalidado. Vuelve a evaluar.');
 
   const snap = publishingProvider.recordPublication(workspaceId, {
     youtubeVideoId: input.youtubeVideoId || '',
