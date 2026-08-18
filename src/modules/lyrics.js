@@ -1,15 +1,13 @@
 'use strict';
-/* Lyrics Engine - lyrics are only generated after Content DNA approved,
-   Scripture approved and Track Plan approved. Each request receives the
-   track purpose, Scripture reference/theme, emotional start and
-   destination, selected sound seed and vocal mode. The engine never
-   claims invented quotations are Scripture. */
+/* Lyrics Engine - every version records the exact Track Plan, Content DNA
+   and Scripture lineage that produced it. */
 
 const db = require('../db');
 const llm = require('../providers/llm');
 const dnaModule = require('./content-dna');
 const scripture = require('./scripture');
 const tracks = require('./tracks');
+const invalidation = require('./invalidation');
 
 function requirePrereqs(workspaceId) {
   if (!dnaModule.getLatest(workspaceId)) throw new Error('Primero desarrolla el Content DNA.');
@@ -19,8 +17,6 @@ function requirePrereqs(workspaceId) {
 
 function buildPrompt(workspaceId, track) {
   const dna = dnaModule.getLatest(workspaceId);
-  const moment = (dna && dna.moment) || '';
-  const need = (dna && dna.humanNeed) || '';
   return [
     'Eres un compositor cristiano que crea canciones 100% ORIGINALES para un público joven.',
     'El canal es 100% en español latinoamericano. Escribe la letra EN ESPAÑOL, moderno, directo y con sentimiento.',
@@ -28,19 +24,19 @@ function buildPrompt(workspaceId, track) {
     'REGLAS:',
     '- Escribe letras 100% originales. NO copies, cites ni te acerques a ninguna canción existente.',
     '- Lenguaje moderno, directo y poético. Nada de frases religiosas forzadas ni sermones.',
-    '- Mensaje claro y un versículo como apoyo espiritual (puede citarlo al final si aporta).',
+    '- Mensaje claro y un versículo como apoyo espiritual.',
     '- Usa imágenes concretas: luz, café, noche, ventana, lluvia, sombra, silencio.',
     '- No repitas la misma frase más de dos veces.',
-    '- NO escribas la referencia bíblica (ej. "Salmo 25:4-5") dentro de la letra. La referencia solo informa el tema.',
-    '- Responde SOLO con la letra y los rótulos de sección entre corchetes. Sin comentarios ni explicaciones.',
+    '- NO escribas la referencia bíblica dentro de la letra.',
+    '- Responde SOLO con la letra y los rótulos de sección entre corchetes.',
     '',
     `Título del track: ${track.title}`,
     `Tema / mensaje: ${track.scriptureTheme}`,
     `Pasaje bíblico de apoyo: ${track.scriptureReference}`,
     `Tono: ${track.emotionalStart} → ${track.emotionalEnd}`,
     `Género sonoro: ${track.soundSeed}`,
-    `Momento del día: ${moment}`,
-    `Necesidad del oyente: ${need}`,
+    `Momento del día: ${dna.moment}`,
+    `Necesidad del oyente: ${dna.humanNeed}`,
     `Hook / dirección: ${track.lyricDirection}`,
     '',
     'Estructura: [Intro], [Verso 1], [Pre-coro], [Coro], [Verso 2], [Puente], [Coro final].',
@@ -73,24 +69,25 @@ function sanitizeLyrics(raw) {
   return out
     .replace(/\[Intro\]/gi, '[Intro]')
     .replace(/\[Verse \d\]/gi, (m) => '[Verso ' + m.replace(/\D/g, '') + ']')
-    .replace(/\[Verso \d\]/gi, (m) => m)  // preserve Spanish verse tags
+    .replace(/\[Verso \d\]/gi, (m) => m)
     .replace(/\[Pre-chorus\]/gi, '[Pre-coro]')
     .replace(/\[Pre-coro\]/gi, '[Pre-coro]')
     .replace(/\[Chorus final\]/gi, '[Coro final]')
-    .replace(/\[Coro final\]/gi, '[Coro final]')
     .replace(/\[Chorus\]/gi, '[Coro]')
-    .replace(/\[Coro\]/gi, '[Coro]')
     .replace(/\[Bridge\]/gi, '[Puente]')
-    .replace(/\[Puente\]/gi, '[Puente]')
     .replace(/\[Ending\]/gi, '[Final]')
-    .replace(/\[Outro\]/gi, '[Final]')
-    .replace(/\[Final\]/gi, '[Final]');
+    .replace(/\[Outro\]/gi, '[Final]');
 }
 
 async function generate(trackId, opts = {}) {
   const track = tracks.get(trackId);
   if (!track) throw new Error('Track no encontrado.');
   requirePrereqs(track.workspaceId);
+  if (track.status === 'STALE' || track.status === 'SUPERSEDED') throw new Error('El track ya no es actual. Regenera o aprueba un Track Plan vigente.');
+  const dna = dnaModule.getLatest(track.workspaceId);
+  const sc = scripture.getApproved(track.workspaceId);
+  if (track.contentDnaVersion !== dna.version || track.scriptureId !== sc.id) throw new Error('El track pertenece a una versión anterior del Content DNA o Scripture.');
+
   let lyrics;
   if (!opts.offline) {
     try {
@@ -109,7 +106,17 @@ async function generate(trackId, opts = {}) {
     trackId,
     lyrics,
     status: 'DRAFT',
+    lineage: {
+      workspaceId: track.workspaceId,
+      contentDnaVersion: track.contentDnaVersion,
+      scriptureId: track.scriptureId,
+      trackPlanVersion: track.trackPlanVersion,
+      trackId,
+      lyricsVersion: null,
+    },
   });
+  stored.lineage.lyricsVersion = stored.version;
+  db.update('lyrics_versions', stored.id, { lineage: stored.lineage });
   db.update('tracks', trackId, { lyrics });
   db.persist();
   return stored;
@@ -118,9 +125,12 @@ async function generate(trackId, opts = {}) {
 function approve(trackId, version) {
   const v = db.where('lyrics_versions', (l) => l.trackId === trackId && l.version === Number(version))[0];
   if (!v) throw new Error('Versión de lyrics no encontrada.');
+  const track = tracks.get(trackId);
+  if (!track || track.status === 'STALE' || track.status === 'SUPERSEDED') throw new Error('No puedes aprobar lyrics de un track obsoleto.');
   const approved = db.update('lyrics_versions', v.id, { status: 'APPROVED' });
   db.update('tracks', trackId, { lyrics: v.lyrics });
   db.persist();
+  invalidation.invalidateWorkspaceArtifacts(track.workspaceId, { type: 'LYRICS_CHANGED', sourceArtifactId: approved.id, sourceVersion: approved.version });
   return approved;
 }
 
@@ -133,7 +143,7 @@ function latestForTrack(trackId) {
 }
 
 function approvedForWorkspace(workspaceId) {
-  return db.where('lyrics_versions', (l) => l.workspaceId === workspaceId && l.status === 'APPROVED');
+  return db.where('lyrics_versions', (l) => l.workspaceId === workspaceId && l.status === 'APPROVED' && l.lineage && l.lineage.contentDnaVersion === dnaModule.getLatest(workspaceId)?.version);
 }
 
 module.exports = { generate, approve, versionsForTrack, latestForTrack, approvedForWorkspace };
