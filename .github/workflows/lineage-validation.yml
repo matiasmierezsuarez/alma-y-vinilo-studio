@@ -17,6 +17,9 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 24
       - name: Run lineage regression tests
-        run: node tests/lineage.test.js
+        run: |
+          node tests/lineage.test.js
+          node tests/invalidation.matrix.test.js
+          node tests/publication-history.test.js
