@@ -18,9 +18,10 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 24
-      - name: Run lineage regression tests
+      - name: Run lineage and acceptance regression tests
         run: |
           node tests/lineage.test.js
           node tests/invalidation.matrix.test.js
           node tests/publication-history.test.js
           node tests/workspace.e2e.regression.test.js
+          node tests/workspace.acceptance.api.test.js
