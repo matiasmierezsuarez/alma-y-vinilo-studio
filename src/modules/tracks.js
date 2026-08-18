@@ -1,15 +1,19 @@
 'use strict';
-/* Track Plan Engine - track plan BEFORE lyrics/music. A video may
-   contain multiple tracks and the plan must demonstrate an emotional
-   arc. The system should not produce 10 arbitrary songs: 4-6 coherent
-   tracks around the approved Scripture. */
+/* Track Plan Engine - the plan is an explicit versioned artifact. Tracks
+   carry the exact Content DNA and Scripture versions used to generate them. */
 
 const db = require('../db');
 const llm = require('../providers/llm');
 const dnaModule = require('./content-dna');
 const scripture = require('./scripture');
+const invalidation = require('./invalidation');
 
 const RECOMMENDED_RANGE = { min: 4, max: 6 };
+
+function currentPlanVersion(workspaceId) {
+  const rows = list(workspaceId);
+  return rows.reduce((max, t) => Math.max(max, Number(t.trackPlanVersion) || 0), 0);
+}
 
 function buildPrompt(workspaceId) {
   const dna = dnaModule.getLatest(workspaceId);
@@ -37,7 +41,6 @@ function fallbackPlan(workspaceId) {
   const need = dna.humanNeed || 'rest';
   const theme = sc.theme || 'guía y paz';
   const ref = sc.reference || 'Salmo 23';
-  const seeds = ['Constante a través de todo', 'Muéstrame el Camino', 'Aguas Tranquilas', 'Descanso para mi Mente'];
   const titles = {
     anxiety: ['Paz sobre el Ruido', 'La Quietud Me Encuentra', 'Tú Me Sostienes', 'Seguro en la Calma'],
     tiredness: ['Gracia para el Cansado', 'Déjalo Caer', 'Sábado en mi Alma', 'Descanso Bajo las Estrellas'],
@@ -69,11 +72,12 @@ async function plan(workspaceId, opts = {}) {
   if (!dnaModule.getLatest(workspaceId)) throw new Error('Primero desarrolla el Content DNA.');
   if (!scripture.getApproved(workspaceId)) throw new Error('Primero aprueba la Scripture.');
 
-  /* Regenerate: keep APPROVED tracks, replace the rest so approved
-     tracks survive an edit and the plan does not accumulate versions. */
+  const previousPlanVersion = currentPlanVersion(workspaceId);
+  const trackPlanVersion = previousPlanVersion + 1;
   const existing = list(workspaceId);
-  const approved = existing.filter((t) => t.status === 'APPROVED');
-  existing.forEach((t) => { if (t.status !== 'APPROVED') db.remove('tracks', t.id); });
+  existing.forEach((t) => {
+    if (t.status !== 'SUPERSEDED') db.update('tracks', t.id, { status: 'SUPERSEDED', supersededAt: new Date().toISOString() });
+  });
 
   let tracksData;
   if (!opts.offline) {
@@ -88,45 +92,57 @@ async function plan(workspaceId, opts = {}) {
     }
   }
   if (!tracksData || !tracksData.length) tracksData = fallbackPlan(workspaceId);
-  tracksData = tracksData.slice(0, RECOMMENDED_RANGE.max - approved.length);
+  tracksData = tracksData.slice(0, RECOMMENDED_RANGE.max);
 
   const dna = dnaModule.getLatest(workspaceId);
-  const created = tracksData.map((t, i) => {
-    return db.insert('tracks', {
+  const sc = scripture.getApproved(workspaceId);
+  const created = tracksData.map((t, i) => db.insert('tracks', {
+    workspaceId,
+    trackPlanVersion,
+    contentDnaVersion: dna.version,
+    scriptureId: sc.id,
+    number: i + 1,
+    title: String(t.title || 'Track ' + (i + 1)).trim(),
+    purpose: String(t.purpose || '').trim(),
+    scriptureReference: String(t.scriptureReference || sc.reference || '').trim(),
+    scriptureTheme: String(t.scriptureTheme || sc.theme || '').trim(),
+    emotionalStart: String(t.emotionalStart || '').trim(),
+    emotionalEnd: String(t.emotionalEnd || '').trim(),
+    soundSeed: dna.soundSeed,
+    vocalMode: dna.vocalMode,
+    lyricDirection: String(t.lyricDirection || '').trim(),
+    sunoPrompt: '',
+    lyrics: '',
+    status: 'PLANNED',
+    lineage: {
       workspaceId,
-      number: approved.length + i + 1,
-      title: String(t.title || 'Track ' + (i + 1)).trim(),
-      purpose: String(t.purpose || '').trim(),
-      scriptureReference: String(t.scriptureReference || scripture.currentReference(workspaceId) || '').trim(),
-      scriptureTheme: String(t.scriptureTheme || scripture.currentTheme(workspaceId) || '').trim(),
-      emotionalStart: String(t.emotionalStart || '').trim(),
-      emotionalEnd: String(t.emotionalEnd || '').trim(),
-      soundSeed: dna.soundSeed,
-      vocalMode: dna.vocalMode,
-      lyricDirection: String(t.lyricDirection || '').trim(),
-      sunoPrompt: '',
-      lyrics: '',
-      status: 'PLANNED',
-    });
-  });
+      contentDnaVersion: dna.version,
+      scriptureId: sc.id,
+      trackPlanVersion,
+    },
+  }));
   db.persist();
+  invalidation.invalidateWorkspaceArtifacts(workspaceId, {
+    type: 'TRACK_PLAN_CHANGED',
+    sourceVersion: trackPlanVersion,
+  });
   return created;
 }
 
 function list(workspaceId) {
-  return db.where('tracks', (t) => t.workspaceId === workspaceId).sort((a, b) => a.number - b.number);
+  return db.where('tracks', (t) => t.workspaceId === workspaceId).sort((a, b) => (a.trackPlanVersion || 0) - (b.trackPlanVersion || 0) || a.number - b.number);
 }
 
 function get(id) { return db.get('tracks', id); }
 
 function approve(workspaceId, ids) {
   const rows = list(workspaceId);
-  const target = new Set(ids || rows.map((r) => r.id));
+  const target = new Set(ids || rows.filter((r) => r.status === 'PLANNED').map((r) => r.id));
   rows.forEach((t) => {
-    if (target.has(t.id)) db.update('tracks', t.id, { status: 'APPROVED' });
+    if (target.has(t.id) && t.status !== 'STALE' && t.status !== 'SUPERSEDED') db.update('tracks', t.id, { status: 'APPROVED' });
   });
   db.persist();
-  return list(workspaceId);
+  return list(workspaceId).filter((t) => t.status === 'APPROVED');
 }
 
 function update(id, patch) {
@@ -134,12 +150,19 @@ function update(id, patch) {
   const clean = {};
   allowed.forEach((k) => { if (k in patch) clean[k] = patch[k]; });
   const t = db.update('tracks', id, clean);
+  if (t && Object.keys(clean).length) {
+    invalidation.invalidateWorkspaceArtifacts(t.workspaceId, {
+      type: ['soundSeed', 'vocalMode'].some((k) => k in clean) ? 'SOUND_SEED_CHANGED' : 'TRACK_CHANGED',
+      sourceArtifactId: t.id,
+      sourceVersion: t.trackPlanVersion,
+    });
+  }
   db.persist();
   return t;
 }
 
 function allApproved(workspaceId) {
-  return db.where('tracks', (t) => t.workspaceId === workspaceId && t.status === 'APPROVED').sort((a, b) => a.number - b.number);
+  return db.where('tracks', (t) => t.workspaceId === workspaceId && t.status === 'APPROVED').sort((a, b) => (a.trackPlanVersion || 0) - (b.trackPlanVersion || 0) || a.number - b.number);
 }
 
-module.exports = { plan, list, get, approve, update, allApproved, RECOMMENDED_RANGE };
+module.exports = { plan, list, get, approve, update, allApproved, RECOMMENDED_RANGE, currentPlanVersion };
