@@ -5,11 +5,15 @@
 const db = require('../db');
 const METRIC_FIELDS = ['views', 'impressions', 'ctr', 'avgViewDuration', 'avgPercentageViewed', 'watchTime', 'likes', 'comments', 'subscribersGained', 'trafficSources'];
 
+function latestPublication(workspaceId) {
+  return db.where('publication_snapshots', (p) => p.workspaceId === workspaceId).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0] || null;
+}
 function capture(workspaceId, snapshot) {
+  const publication = snapshot.publicationSnapshotId ? db.get('publication_snapshots', snapshot.publicationSnapshotId) : latestPublication(workspaceId);
   const row = {
     workspaceId,
-    publicationSnapshotId: snapshot.publicationSnapshotId || null,
-    lineage: snapshot.lineage || null,
+    publicationSnapshotId: publication ? publication.id : null,
+    lineage: publication ? publication.artifacts || null : snapshot.lineage || null,
     kind: snapshot.kind || 'custom',
     capturedAt: snapshot.capturedAt || new Date().toISOString(),
     views: snapshot.views != null ? Number(snapshot.views) : null,
@@ -24,9 +28,7 @@ function capture(workspaceId, snapshot) {
     trafficSources: Array.isArray(snapshot.trafficSources) ? snapshot.trafficSources : [],
     immutable: true,
   };
-  const s = db.insert('analytics_snapshots', row);
-  db.persist();
-  return s;
+  const s = db.insert('analytics_snapshots', row); db.persist(); return s;
 }
 function snapshotsFor(workspaceId) { return db.where('analytics_snapshots', (r) => r.workspaceId === workspaceId).sort((a, b) => new Date(a.capturedAt) - new Date(b.capturedAt)); }
 function parseCsv(text) {
