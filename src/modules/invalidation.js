@@ -1,6 +1,7 @@
 'use strict';
 
 const db = require('../db');
+const lineage = require('./lineage');
 
 const IMPACT = {
   CONTENT_DNA_CHANGED: ['scripture', 'trackPlan', 'track', 'lyrics', 'music', 'visual', 'packaging', 'review'],
@@ -27,6 +28,18 @@ const TABLE_BY_STAGE = {
   review: 'review_items',
 };
 
+const LINEAGE_FIELD_BY_CHANGE = {
+  CONTENT_DNA_CHANGED: 'contentDnaVersion',
+  SCRIPTURE_CHANGED: 'scriptureId',
+  TRACK_PLAN_CHANGED: 'trackPlanVersion',
+  TRACK_CHANGED: 'trackId',
+  LYRICS_CHANGED: 'lyricsVersion',
+  MUSIC_CHANGED: 'musicGenerationId',
+  VISUAL_MASTER_CHANGED: 'visualMasterReferenceId',
+  VISUAL_ASSET_CHANGED: 'visualAssetVersion',
+  PACKAGING_CHANGED: 'packagingVersion',
+};
+
 function getInvalidationImpact(changeType) {
   return [...(IMPACT[changeType] || [])];
 }
@@ -48,25 +61,57 @@ function isSourceRow(row, stage, change) {
   return false;
 }
 
+function rowDependsOnChange(row, change = {}) {
+  // Without a concrete source, retain the legacy workspace-wide behavior.
+  if (!change.sourceArtifactId && change.sourceVersion == null) return true;
+
+  const artifactLineage = lineage.getLineage(row);
+  const sourceArtifactIds = artifactLineage.sourceArtifactIds || [];
+
+  if (change.sourceArtifactId) {
+    if (row.trackId === change.sourceArtifactId) return true;
+    if (artifactLineage.trackId === change.sourceArtifactId) return true;
+    if (sourceArtifactIds.includes(change.sourceArtifactId)) return true;
+  }
+
+  const field = LINEAGE_FIELD_BY_CHANGE[change.type];
+  if (!field || artifactLineage[field] == null) return false;
+  if (change.sourceVersion == null) return true;
+  return String(artifactLineage[field]) === String(change.sourceVersion);
+}
+
 function markRowsStale(workspaceId, stage, reason, change = {}) {
   const table = TABLE_BY_STAGE[stage];
   if (!table) return 0;
   const rows = db.where(table, (row) => row.workspaceId === workspaceId);
   let count = 0;
+
   rows.forEach((row) => {
     if (isSourceRow(row, stage, change)) return;
+    if (!rowDependsOnChange(row, change)) return;
+
     if (table === 'review_items') {
       if (['APPROVED', 'READY_FOR_REVIEW'].includes(row.status)) {
-        db.update(table, row.id, { status: 'INVALIDATED', invalidatedReason: reason, invalidatedAt: new Date().toISOString() });
+        db.update(table, row.id, {
+          status: 'INVALIDATED',
+          invalidatedReason: reason,
+          invalidatedAt: new Date().toISOString(),
+        });
         count += 1;
       }
       return;
     }
+
     if (!['STALE', 'SUPERSEDED'].includes(row.status)) {
-      db.update(table, row.id, { status: 'STALE', staleReason: reason, staleAt: new Date().toISOString() });
+      db.update(table, row.id, {
+        status: 'STALE',
+        staleReason: reason,
+        staleAt: new Date().toISOString(),
+      });
       count += 1;
     }
   });
+
   return count;
 }
 
@@ -85,4 +130,5 @@ module.exports = {
   getInvalidationImpact,
   buildInvalidations,
   invalidateWorkspaceArtifacts,
+  rowDependsOnChange,
 };
