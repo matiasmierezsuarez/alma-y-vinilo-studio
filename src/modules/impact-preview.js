@@ -1,110 +1,124 @@
 /**
  * Impact preview module for Layer 9.2.
- * Computes the impact of a potential change without mutating state.
+ *
+ * The preview is intentionally read-only. It projects the artifacts that are
+ * connected to a pending domain change without changing versions, statuses or
+ * publication history.
  */
+
+'use strict';
 
 const db = require('../db');
-const { IMPACT, getInvalidationImpact } = require('./invalidation');
+const { getInvalidationImpact } = require('./invalidation');
 const lineage = require('./lineage');
 
+const TABLE_BY_STAGE = {
+  scripture: 'scriptures',
+  trackPlan: 'tracks',
+  track: 'tracks',
+  lyrics: 'lyrics_versions',
+  music: 'music_generations',
+  visual: 'visual_assets',
+  packaging: 'packaging_versions',
+  review: 'review_items',
+};
+
+const LINEAGE_FIELD_BY_CHANGE = {
+  CONTENT_DNA_CHANGED: 'contentDnaVersion',
+  SCRIPTURE_CHANGED: 'scriptureId',
+  TRACK_PLAN_CHANGED: 'trackPlanVersion',
+  TRACK_CHANGED: 'trackId',
+  LYRICS_CHANGED: 'lyricsVersion',
+  MUSIC_CHANGED: 'musicGenerationId',
+  VISUAL_MASTER_CHANGED: 'visualMasterReferenceId',
+  VISUAL_ASSET_CHANGED: 'visualAssetVersion',
+  PACKAGING_CHANGED: 'packagingVersion',
+};
+
+function artifactDependsOnChange(artifact, change = {}) {
+  const artifactLineage = lineage.getLineage(artifact);
+  const sourceArtifactIds = artifactLineage.sourceArtifactIds || [];
+
+  if (change.sourceArtifactId) {
+    if (sourceArtifactIds.includes(change.sourceArtifactId)) return true;
+    if (artifactLineage.trackId === change.sourceArtifactId) return true;
+  }
+
+  const field = LINEAGE_FIELD_BY_CHANGE[change.type];
+  if (!field || artifactLineage[field] == null) return false;
+
+  if (change.sourceVersion == null) return true;
+  return String(artifactLineage[field]) === String(change.sourceVersion);
+}
+
+function collectStageArtifacts(workspaceId, stage) {
+  const table = TABLE_BY_STAGE[stage];
+  if (!table) return [];
+  return db.where(table, (artifact) => artifact.workspaceId === workspaceId);
+}
+
+function isSourceArtifact(artifact, change = {}) {
+  return !!change.sourceArtifactId && artifact.id === change.sourceArtifactId;
+}
+
 /**
- * Compute the impact preview for a given change in a workspace.
- * @param {string} workspaceId - The workspace ID.
- * @param {Object} change - The change object, containing at least { type } and optionally { sourceArtifactId, sourceVersion }.
- * @returns {Object} Impact preview with directImpact, indirectImpact, affectedArtifacts, affectedStages, impactCount, simulation.
+ * Compute the impact of a pending change without mutating state.
+ *
+ * The first affected dependency stage is reported as direct impact. Later
+ * stages are indirect impact. Artifact membership is additionally filtered by
+ * lineage/source identity so a Track-scoped change does not automatically pull
+ * unrelated sibling tracks into the preview.
  */
-function computeImpactPreview(workspaceId, change) {
-  const { type, sourceArtifactId, sourceVersion } = change;
+function computeImpactPreview(workspaceId, change = {}) {
   const impactedStages = getInvalidationImpact(change.type);
-  // For simplicity, we consider all impacted stages as direct impact.
-  // In a more refined version, we could separate direct and indirect impact.
-  const directImpact = [...impactedStages];
-  const indirectImpact = [];
-
-  // We'll collect affected artifacts.
+  const directStage = impactedStages[0] || null;
+  const directImpact = directStage ? [directStage] : [];
+  const indirectImpact = directStage ? impactedStages.slice(1) : [];
   const affectedArtifacts = [];
-  const affectedStagesSet = new Set(impactedStages);
-
-  // For each impacted stage, find artifacts that would become stale.
-  for (const stage of impactedStages) {
-    const TABLE_BY_STAGE = { scripture: 'scriptures', trackPlan: 'tracks', track: 'tracks', lyrics: 'lyrics_versions', music: 'music_generations', visual: 'visual_assets', packaging: 'packaging_versions', review: 'review_items' }; const tableName = TABLE_BY_STAGE[stage];
-    if (!tableName) continue;
-    const artifacts = db.where(tableName, (artifact) => artifact.workspaceId === workspaceId);
-    for (const artifact of artifacts) {
-      // Skip the source artifact if we have sourceArtifactId and sourceVersion.
-      if (sourceArtifactId && artifact.id === sourceArtifactId) {
-        continue;
-      }
-      // Compute the lineage of the artifact.
-      const artifactLineage = lineage.getLineage(artifact);
-      // We need to compute what the lineage would be after the change.
-      // For simplicity, we assume that the change only affects the lineage field corresponding to the changed stage.
-      // We don't have the new lineage value, but we can determine if the artifact would be stale by checking if its lineage
-      // matches the current workspace lineage for the changed_stage? Actually, we need to know if the artifact depends on the changed artifact.
-      // We can use lineage.compareLineage by creating a current lineage object that includes the change?
-      // Since we don't have the new value, we can only determine staleness if we know that the artifact's lineage depends on the changed field.
-      // For example, if the change is SCRIPTURE_CHANGED, then any artifact that has a scriptureId in its lineage would be affected if the scriptureId changes.
-      // However, we don't know the new scriptureId, but we know that any artifact that has a scriptureId (i.e., depends on scripture) would need to be updated.
-      // Thus, we can consider that any artifact that has a non-null value for the field corresponding to the changed stage in its lineage is potentially affected.
-      // But we want to know if it would become stale, i.e., if the lineage would change.
-      // Since we are changing the scriptureId to a new value, any artifact that has a scriptureId (regardless of its current value) would see its lineage change.
-      // Therefore, all artifacts of stages that are impacted would be affected? Not exactly: an artifact that does not depend on scripture (e.g., a track that does not have a scriptureId in its lineage) would not be affected.
-      // We need to check if the artifact's lineage includes the changed stage.
-
-      // We can check if the artifact's lineage has a non-null value for the field that corresponds to the changed stage.
-      // We need a mapping from stage to lineage field.
-      const stageToLineageField = {
-        scripture: 'scriptureId',
-        trackPlan: 'trackPlanVersion',
-        track: 'trackId',
-        lyrics: 'lyricsVersion',
-        music: 'musicGenerationId',
-        visual: 'visualMasterReferenceId',
-        packaging: 'packagingVersion',
-        review: null, // review lineage is not a simple field
-      };
-      const field = stageToLineageField[stage];
-      if (field && artifactLineage[field] !== null) {
-        // This artifact depends on the stage, so changing the stage will affect its lineage.
-        affectedArtifacts.push({
-          type: stage,
-          id: artifact.id,
-        });
-      }
-      // For review, we need to check if the review's lineage includes the changed stage via the lineage object.
-      // We'll skip review for simplicity.
-    }
-  }
-
-  // Remove duplicates in affectedArtifacts (by type and id).
   const seen = new Set();
-  const uniqueAffectedArtifacts = [];
-  for (const artifact of affectedArtifacts) {
-    const key = `${artifact.type}:${artifact.id}`;
-    if (!seen.has(key)) {
+
+  for (const stage of impactedStages) {
+    const artifacts = collectStageArtifacts(workspaceId, stage);
+    for (const artifact of artifacts) {
+      if (isSourceArtifact(artifact, change)) continue;
+      if (!artifactDependsOnChange(artifact, change)) continue;
+
+      const key = `${stage}:${artifact.id}`;
+      if (seen.has(key)) continue;
       seen.add(key);
-      uniqueAffectedArtifacts.push(artifact);
+
+      affectedArtifacts.push({
+        type: stage,
+        id: artifact.id,
+        version: artifact.version ?? null,
+        trackId: artifact.trackId || lineage.getLineage(artifact).trackId || null,
+        impact: stage === directStage ? 'direct' : 'indirect',
+      });
     }
   }
 
-  // Impact count is the number of affected artifacts.
-  const impactCount = uniqueAffectedArtifacts.length;
-
-  // For simplicity, we set projected consequences to empty or we could compute more.
-  const projectedConsequences = {};
+  const affectedStages = [...new Set(affectedArtifacts.map((artifact) => artifact.type))];
 
   return {
-    directImpact: directImpact,
-    indirectImpact: indirectImpact,
-    affectedArtifacts: uniqueAffectedArtifacts,
-    affectedStages: Array.from(affectedStagesSet),
-    impactCount: impactCount,
-    projectedConsequences: projectedConsequences,
+    artifact: {
+      id: change.sourceArtifactId || null,
+      type: change.type || null,
+      version: change.sourceVersion ?? null,
+    },
+    directImpact,
+    indirectImpact,
+    affectedArtifacts,
+    affectedStages,
+    impactCount: affectedArtifacts.length,
+    projectedConsequences: {
+      directCount: affectedArtifacts.filter((artifact) => artifact.impact === 'direct').length,
+      indirectCount: affectedArtifacts.filter((artifact) => artifact.impact === 'indirect').length,
+    },
     simulation: true,
   };
 }
 
 module.exports = {
   computeImpactPreview,
+  artifactDependsOnChange,
 };
-
