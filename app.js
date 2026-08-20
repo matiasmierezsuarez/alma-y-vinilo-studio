@@ -73,6 +73,73 @@ async function withBusy(label, fn) {
   }
 }
 
+/* ------------------------------------------------ impact confirmation */
+
+function impactItems(preview, kind) {
+  const items = (preview.affectedArtifacts || []).filter((item) => item.impact === kind);
+  return items.length ? items.slice(0, 8).map((item) => `<li>${esc(item.type)} · ${esc(item.id)}</li>`).join('') : '<li>Sin artefactos activos</li>';
+}
+
+function showImpactConfirmation({ title, preview, onConfirm }) {
+  return new Promise((resolve, reject) => {
+    const modal = document.createElement('div');
+    modal.className = 'modal impact-modal';
+    const stages = (preview.affectedStages || []).map((stage) => esc(stage)).join(', ');
+    const directCount = preview.projectedConsequences ? preview.projectedConsequences.directCount : 0;
+    const indirectCount = preview.projectedConsequences ? preview.projectedConsequences.indirectCount : 0;
+    modal.innerHTML = `
+      <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="impact-title">
+        <div class="modal-head"><h3 id="impact-title">Impacto de la modificación</h3></div>
+        <div class="modal-body">
+          <p>Vas a modificar: <strong>${esc(title)}</strong>.</p>
+          <p class="hint">${directCount} directo(s), ${indirectCount} indirecto(s). Etapas: ${stages || 'ninguna'}.</p>
+          <div class="impact-columns">
+            <section><h4>Directamente afectado</h4><ul>${impactItems(preview, 'direct')}</ul></section>
+            <section><h4>Indirectamente afectado</h4><ul>${impactItems(preview, 'indirect')}</ul></section>
+          </div>
+          <p class="hint">Esta es una simulación: no se modificó ningún dato.</p>
+          <p class="impact-error" hidden></p>
+        </div>
+        <div class="modal-foot">
+          <button class="btn btn-ghost" type="button" data-impact-cancel>Cancelar</button>
+          <button class="btn btn-primary" type="button" data-impact-confirm>Confirmar cambio</button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+    const close = () => modal.remove();
+    modal.querySelector('[data-impact-cancel]').onclick = () => { close(); resolve(false); };
+    modal.querySelector('[data-impact-confirm]').onclick = async (event) => {
+      const button = event.currentTarget;
+      if (button.disabled) return;
+      button.disabled = true;
+      button.textContent = 'Confirmando…';
+      try {
+        await onConfirm();
+        close();
+        resolve(true);
+      } catch (error) {
+        button.disabled = false;
+        button.textContent = 'Confirmar cambio';
+        const message = modal.querySelector('.impact-error');
+        message.hidden = false;
+        message.textContent = String(error.message || error);
+        reject(error);
+      }
+    };
+  });
+}
+
+async function confirmImpactChange({ type, title, mutate }) {
+  try {
+    const preview = await api('POST', `/workspaces/${state.wsId}/lineage/impact-preview`, { type });
+    if (!preview.impactCount) return mutate();
+    return showImpactConfirmation({ title, preview, onConfirm: mutate });
+  } catch (error) {
+    toast(String(error.message || error), true);
+    return false;
+  }
+}
+
 /* ---------------------------------------------------------------- health */
 
 async function checkHealth() {
@@ -382,10 +449,12 @@ async function renderDna() {
       <summary>Avanzado: JSON crudo (v${(r.versions || []).length} versiones)</summary>
       <pre>${esc(JSON.stringify(dna, null, 2))}</pre>
     </details>`);
-  $('#btn-dna-refine').onclick = () => withBusy('Refinando escenario', async () => {
-    await api('POST', `/workspaces/${state.wsId}/content-dna/refine`, genBody({}));
-    await loadWorkspace();
-    renderStage();
+  $('#btn-dna-refine').onclick = () => confirmImpactChange({
+    type: 'CONTENT_DNA_CHANGED', title: 'Content DNA', mutate: () => withBusy('Refinando escenario', async () => {
+      await api('POST', `/workspaces/${state.wsId}/content-dna/refine`, genBody({}));
+      await loadWorkspace();
+      renderStage();
+    })
   });
   $('#btn-next').disabled = false;
 }
@@ -434,10 +503,12 @@ async function renderScriptureCandidates() {
         <dt>Momentos</dt><dd>${esc((c.moments || []).join(', '))}</dd>
       </dl>
       <button class="btn btn-primary" type="button">Elegir</button>`;
-    el.querySelector('button').onclick = () => withBusy('Seleccionando', async () => {
-      await api('POST', `/workspaces/${state.wsId}/scripture/select`, { reference: c.reference });
-      await loadWorkspace();
-      renderStage();
+    el.querySelector('button').onclick = () => confirmImpactChange({
+      type: 'SCRIPTURE_CHANGED', title: `Scripture ${c.reference}`, mutate: () => withBusy('Seleccionando', async () => {
+        await api('POST', `/workspaces/${state.wsId}/scripture/select`, { reference: c.reference });
+        await loadWorkspace();
+        renderStage();
+      })
     });
     list.appendChild(el);
   });
@@ -454,10 +525,12 @@ async function renderTracks() {
     stageEl(`
       <div class="empty">Genera el plan de 4–6 tracks. Letras y música vienen después.</div>
       <div class="row"><button id="btn-plan" class="btn btn-primary" type="button">Crear plan de tracks</button></div>`);
-    $('#btn-plan').onclick = () => withBusy('Creando plan', async () => {
-      await api('POST', `/workspaces/${state.wsId}/tracks/plan`, genBody({}));
-      await loadWorkspace();
-      renderStage();
+    $('#btn-plan').onclick = () => confirmImpactChange({
+      type: 'TRACK_PLAN_CHANGED', title: 'Plan de tracks', mutate: () => withBusy('Creando plan', async () => {
+        await api('POST', `/workspaces/${state.wsId}/tracks/plan`, genBody({}));
+        await loadWorkspace();
+        renderStage();
+      })
     });
     return;
   }
@@ -491,10 +564,12 @@ async function renderTracks() {
     await loadWorkspace();
     renderStage();
   });
-  $('#btn-replan').onclick = () => withBusy('Replanificando', async () => {
-    await api('POST', `/workspaces/${state.wsId}/tracks/plan`, genBody({}));
-    await loadWorkspace();
-    renderStage();
+  $('#btn-replan').onclick = () => confirmImpactChange({
+    type: 'TRACK_PLAN_CHANGED', title: 'Plan de tracks', mutate: () => withBusy('Replanificando', async () => {
+      await api('POST', `/workspaces/${state.wsId}/tracks/plan`, genBody({}));
+      await loadWorkspace();
+      renderStage();
+    })
   });
   $('#btn-next').disabled = !approved.length;
 }
