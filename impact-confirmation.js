@@ -56,18 +56,20 @@
       + impactList('Indirectamente afectados', indirect);
     modal.hidden = false;
     return new Promise(function (resolve) {
+      let settled = false;
       const cancel = document.getElementById('impact-cancel');
       const confirm = document.getElementById('impact-confirm');
       function close(result) {
+        if (settled) return;
+        settled = true;
         modal.hidden = true;
         cancel.onclick = null;
         confirm.onclick = null;
         resolve(result);
       }
-      cancel.onclick = function () { if (!confirming) close(false); };
+      cancel.onclick = function () { close(false); };
       confirm.onclick = function () {
-        if (confirming) return;
-        confirming = true;
+        if (settled) return;
         confirm.disabled = true;
         confirm.textContent = 'Confirmando…';
         close(true);
