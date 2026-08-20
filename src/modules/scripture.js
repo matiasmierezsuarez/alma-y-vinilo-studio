@@ -78,7 +78,7 @@ function select(workspaceId, reference, opts = {}) {
   invalidation.invalidateWorkspaceArtifacts(workspaceId, {
     type: 'SCRIPTURE_CHANGED',
     sourceArtifactId: stored.id,
-    sourceVersion: stored.createdAt,
+    sourceVersion: stored.id,
   });
   return stored;
 }
