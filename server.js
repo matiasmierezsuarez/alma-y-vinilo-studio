@@ -117,31 +117,8 @@ async function handler(req, res, url, body) {
       catch (e) { return fail(res, e); }
     }
     if (req.method === 'PATCH') {
-      const workspaceId = id;
-      if (url.searchParams.get('preview') === '1') {
-        // Preview mode: compute impact without mutating state
-        try {
-          const currentDna = dnaModule.getLatest(workspaceId);
-          if (!currentDna) {
-            return fail(res, new Error('No content-dna found for this workspace'));
-          }
-          const change = {
-            type: 'CONTENT_DNA_CHANGED',
-            sourceArtifactId: currentDna.id,
-            sourceVersion: currentDna.version
-          };
-          const preview = impactPreview.computeImpactPreview(workspaceId, change);
-          return ok(res, preview);
-        } catch (e) {
-          return fail(res, e);
-        }
-      }
-      // Normal mode: execute the mutation
-      try {
-        return ok(res, { dna: dnaModule.edit(id, body || {}) });
-      } catch (e) {
-        return fail(res, e);
-        }
+      try { return ok(res, { dna: dnaModule.edit(id, body || {}) }); }
+      catch (e) { return fail(res, e); }
     }
     if (req.method === 'GET') return ok(res, { dna: dnaModule.getLatest(id), versions: dnaModule.versions(id) });
   }
@@ -151,62 +128,40 @@ async function handler(req, res, url, body) {
     return ok(res, { candidates: scripture.candidates(re[1], body || {}) });
   }
   if ((re = m(/^\/workspaces\/([^/]+)\/scripture\/select$/)) && req.method === 'POST') {
-    const workspaceId = re[1];
-    if (url.searchParams.get('preview') === '1') {
-      // Preview mode: compute impact without mutating state
-      try {
-        const currentScripture = scripture.getApproved(workspaceId);
-        if (!currentScripture) {
-          return fail(res, new Error('No scripture approved for this workspace'));
-        }
-        const change = {
-          type: 'SCRIPTURE_CHANGED',
-          sourceArtifactId: currentScripture.id,
-          sourceVersion: currentScripture.createdAt
-        };
-        const preview = impactPreview.computeImpactPreview(workspaceId, change);
-        return ok(res, preview);
-      } catch (e) {
-        return fail(res, e);
-      }
-    }
-    // Normal mode: execute the mutation
-    try {
-      return ok(res, { scripture: scripture.select(re[1], body && body.reference, body || {}) });
-    } catch (e) {
-      return fail(res, e);
-      }
+    try { return ok(res, { scripture: scripture.select(re[1], body && body.reference, body || {}) }); }
+    catch (e) { return fail(res, e); }
   }
   if ((re = m(/^\/workspaces\/([^/]+)\/scripture$/)) && req.method === 'GET') {
     return ok(res, { scripture: scripture.getApproved(re[1]), all: scripture.forWorkspace(re[1]) });
   }
 
+  /* ---- lineage impact preview (strictly read-only) ---- */
+  if ((re = m(/^\/workspaces\/([^/]+)\/lineage\/impact-preview$/)) && req.method === 'POST') {
+    try {
+      const workspaceId = re[1];
+      const type = body && body.type;
+      let change = { type };
+      if (type === 'CONTENT_DNA_CHANGED') {
+        const current = dnaModule.getLatest(workspaceId);
+        if (current) change = { type, sourceArtifactId: current.id, sourceVersion: current.version };
+      } else if (type === 'SCRIPTURE_CHANGED') {
+        const current = scripture.getApproved(workspaceId);
+        if (current) change = { type, sourceArtifactId: current.id, sourceVersion: current.id };
+      } else if (type === 'TRACK_PLAN_CHANGED') {
+        const currentVersion = tracks.currentPlanVersion(workspaceId);
+        change = { type, sourceVersion: currentVersion || null };
+      }
+      return ok(res, impactPreview.computeImpactPreview(workspaceId, change));
+    } catch (e) { return fail(res, e); }
+  }
+
   /* ---- tracks ---- */
   if ((re = m(/^\/workspaces\/([^/]+)\/tracks\/plan$/)) && req.method === 'POST') {
-  if ((re = m(/^\/workspaces\/([^/]+)\/tracks\/plan\/$)) && req.method === 'POST') {
-    const workspaceId = re[1];
-    if (url.searchParams.get('preview') === '1') {
-      // Preview mode: compute impact without mutating state
-      try {
-        // Get current track plan version
-        const currentTracks = tracks.list(workspaceId);
-        const currentPlanVersion = currentTracks.reduce((max, t) => Math.max(max, Number(t.trackPlanVersion) || 0), 0);
-        const change = {
-          type: 'TRACK_PLAN_CHANGED',
-          sourceVersion: currentPlanVersion
-        };
-        const preview = impactPreview.computeImpactPreview(workspaceId, change);
-        return ok(res, preview);
-      } catch (e) {
-        return fail(res, e);
-      }
-    }
-    // Normal mode: execute the mutation
-    try {
-      return ok(res, { tracks: await tracks.plan(re[1], body || {}) });
-    } catch (e) {
-      return fail(res, e);
-      }
+    try { return ok(res, { tracks: await tracks.plan(re[1], body || {}) }); }
+    catch (e) { return fail(res, e); }
+  }
+  if ((re = m(/^\/workspaces\/([^/]+)\/tracks\/approve$/)) && req.method === 'POST') {
+    return ok(res, { tracks: tracks.approve(re[1], body && body.ids) });
   }
   if ((re = m(/^\/workspaces\/([^/]+)\/tracks$/)) && req.method === 'GET') {
     return ok(res, { tracks: tracks.list(re[1]) });
@@ -395,19 +350,6 @@ async function handler(req, res, url, body) {
     try { fsKey.unlinkSync(keyFile); } catch {}
     return ok(res, { keyConfigured: !!llm.readOpenRouterKey() });
   }
-
-  if (p.match(/^\/workspaces\/([^\/]+)\/impact-preview$/) && req.method === 'POST') {
-    const match = p.match(/^\/workspaces\/([^\/]+)\/impact-preview$/)
-    if (match) {
-      const workspaceId = match[1];
-      try {
-        const body = await readBody(req);
-        const preview = impactPreview.computeImpactPreview(workspaceId, body);
-        return ok(res, preview);
-      } catch (e) {
-        return fail(res, e);
-      }
-    }
 
   return null;
 }
