@@ -5,6 +5,14 @@
    asks for confirmation, and then calls the existing route exactly once. */
 (function () {
   let confirming = false;
+  let currentWorkspaceId = null;
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = function (input, init) {
+    const url = typeof input === 'string' ? input : (input && input.url) || '';
+    const match = url.match(/\/workspaces\/([^/?#]+)/);
+    if (match) currentWorkspaceId = decodeURIComponent(match[1]);
+    return originalFetch(input, init);
+  };
 
   function esc(value) {
     return String(value == null ? '' : value)
@@ -63,9 +71,6 @@
         confirm.disabled = true;
         confirm.textContent = 'Confirmando…';
         close(true);
-        confirming = false;
-        confirm.disabled = false;
-        confirm.textContent = 'Confirmar cambio';
       };
     });
   }
@@ -84,41 +89,21 @@
     return result;
   }
 
-  function wsId() { return window.state && window.state.wsId; }
+  function wsId() { return currentWorkspaceId; }
 
   document.addEventListener('click', function (event) {
     const target = event.target.closest('button');
     if (!target || !wsId() || confirming) return;
-
     let config = null;
     if (target.id === 'btn-dna-refine') {
-      config = {
-        previewMethod: 'PATCH',
-        previewPath: '/workspaces/' + wsId() + '/content-dna?preview=1',
-        previewBody: {},
-        method: 'POST',
-        path: '/workspaces/' + wsId() + '/content-dna/refine',
-        body: window.genBody({})
-      };
+      config = { previewMethod: 'PATCH', previewPath: '/workspaces/' + wsId() + '/content-dna?preview=1', previewBody: {}, method: 'POST', path: '/workspaces/' + wsId() + '/content-dna/refine', body: window.genBody({}) };
     } else if (target.closest('#sc-list')) {
       const card = target.closest('.card');
       const reference = card && card.querySelector('h4') ? card.querySelector('h4').textContent.split('—')[0].trim() : null;
       if (!reference) return;
-      config = {
-        previewPath: '/workspaces/' + wsId() + '/scripture/select?preview=1',
-        previewBody: { reference: reference },
-        method: 'POST',
-        path: '/workspaces/' + wsId() + '/scripture/select',
-        body: { reference: reference }
-      };
+      config = { previewPath: '/workspaces/' + wsId() + '/scripture/select?preview=1', previewBody: { reference: reference }, method: 'POST', path: '/workspaces/' + wsId() + '/scripture/select', body: { reference: reference } };
     } else if (target.id === 'btn-replan') {
-      config = {
-        previewPath: '/workspaces/' + wsId() + '/tracks/plan?preview=1',
-        previewBody: {},
-        method: 'POST',
-        path: '/workspaces/' + wsId() + '/tracks/plan',
-        body: window.genBody({})
-      };
+      config = { previewPath: '/workspaces/' + wsId() + '/tracks/plan?preview=1', previewBody: {}, method: 'POST', path: '/workspaces/' + wsId() + '/tracks/plan', body: window.genBody({}) };
     }
     if (!config) return;
     event.preventDefault();
