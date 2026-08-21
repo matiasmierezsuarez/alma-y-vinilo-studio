@@ -67,7 +67,7 @@ function generateForTrack(workspaceId, trackId, opts = {}) {
   if (track.status === 'STALE' || track.status === 'SUPERSEDED') throw new Error('El track ya no es actual.');
   const dna = dnaModule.getLatest(workspaceId);
   const sc = scripture.getApproved(workspaceId);
-  const approvedLyrics = db.where('lyrics_versions', (l) => l.trackId === trackId && l.status === 'APPROVED' && l.lineage && l.lineage.trackPlanVersion === track.trackPlanVersion).sort((a, b) => (a.version || 0) - (b.version || 0)).pop();
+  const approvedLyrics = db.where('lyrics_versions', (l) => l.trackId === trackId && l.status === 'APPROVED' && l.lineage && l.lineage.trackPlanVersion === track.trackPlanVersion && l.lineage.contentDnaVersion === track.contentDnaVersion && l.lineage.scriptureId === track.scriptureId).sort((a, b) => (a.version || 0) - (b.version || 0)).pop();
   if (!dna || !sc || !approvedLyrics) throw new Error('La música requiere Content DNA, Scripture y Lyrics aprobadas y vigentes.');
   if (track.contentDnaVersion !== dna.version || track.scriptureId !== sc.id) throw new Error('El track pertenece a una versión anterior del proyecto.');
 

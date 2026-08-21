@@ -10,6 +10,9 @@ function latestPublication(workspaceId) {
 }
 function capture(workspaceId, snapshot) {
   const publication = snapshot.publicationSnapshotId ? db.get('publication_snapshots', snapshot.publicationSnapshotId) : latestPublication(workspaceId);
+  if (snapshot.publicationSnapshotId && (!publication || publication.workspaceId !== workspaceId)) {
+    throw new Error('El snapshot de publicación no pertenece al Workspace.');
+  }
   const row = {
     workspaceId,
     publicationSnapshotId: publication ? publication.id : null,

@@ -76,8 +76,11 @@ function dnaSummary(dna) {
 }
 /* Link analytics to the exact published lineage. Unpublished work falls back
    to the current workspace because no immutable publication snapshot exists. */
-function link(workspaceId) {
-  const publication = latestPublication(workspaceId);
+function link(workspaceId, snapshotId) {
+  const publication = snapshotId ? db.get('publication_snapshots', snapshotId) : latestPublication(workspaceId);
+  if (snapshotId && (!publication || publication.workspaceId !== workspaceId)) {
+    throw new Error('El snapshot de publicación no pertenece al Workspace.');
+  }
   const artifacts = publication && publication.artifacts ? publication.artifacts : null;
   const dna = artifacts ? resolveDnaVersion(workspaceId, artifacts.contentDnaVersion) : dnaModule.getLatest(workspaceId);
   const scriptureId = artifacts ? artifacts.scriptureId : null;

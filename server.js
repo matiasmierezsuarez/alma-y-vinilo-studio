@@ -265,7 +265,7 @@ async function handler(req, res, url, body) {
     return ok(res, { performance: analytics.performance(re[1]) });
   }
   if ((re = m(/^\/workspaces\/([^/]+)\/analytics\/link$/)) && req.method === 'GET') {
-    return ok(res, { link: analytics.link(re[1]) });
+    return ok(res, { link: analytics.link(re[1], url.searchParams.get('snapshotId') || null) });
   }
   if ((re = m(/^\/workspaces\/([^/]+)\/analytics\/csv$/)) && req.method === 'POST') {
     try { return ok(res, { snapshot: analytics.captureFromCsv(re[1], (body && body.csv) || '') }); }

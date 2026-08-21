@@ -18,8 +18,8 @@ function evaluate(workspaceId) {
   const approvedTracks = tracks.allApproved(workspaceId);
   const lyricsApproved = lyrics.approvedForWorkspace(workspaceId);
   const musicAssets = db.where('music_generations', (m) => m.workspaceId === workspaceId && m.status === 'SUCCEEDED' && m.assetUrl && m.status !== 'STALE');
-  const thumbnails = db.where('visual_assets', (v) => v.workspaceId === workspaceId && v.status !== 'STALE');
   const master = visual.getMasterReference();
+  const thumbnails = db.where('visual_assets', (v) => v.workspaceId === workspaceId && v.status !== 'STALE' && v.lineage && v.lineage.contentDnaVersion === (dna ? dna.version : null) && v.lineage.scriptureId === (sc ? sc.id : null) && (v.lineage.visualMasterReferenceId || null) === (master ? master.id : null));
   const pkg = packaging.latest(workspaceId);
   const items = [];
 
@@ -47,7 +47,7 @@ function evaluate(workspaceId) {
   items.push({ category: 'Packaging', id: 'thumbnail_prompt_present', label: 'Prompt de miniatura presente', pass: !!(pkg && pkg.thumbnailPrompt), detail: pkg && pkg.thumbnailPrompt ? 'Presente' : 'Falta prompt de miniatura en packaging' });
   items.push({ category: 'Packaging', id: 'description_present', label: 'Descripción presente', pass: !!(pkg && pkg.description), detail: pkg && pkg.description ? 'Presente' : 'Falta generar packaging' });
   items.push({ category: 'Packaging', id: 'tags_present', label: 'Tags presentes', pass: !!(pkg && Array.isArray(pkg.tags) && pkg.tags.length), detail: pkg && pkg.tags && pkg.tags.length ? pkg.tags.length + ' tags' : 'Faltan tags' });
-  items.push({ category: 'Packaging', id: 'packaging_current', label: 'Packaging vigente', pass: !!pkg && pkg.status !== 'STALE' && pkg.lineage && pkg.lineage.contentDnaVersion === (dna ? dna.version : null) && pkg.lineage.scriptureId === (sc ? sc.id : null), detail: pkg ? (pkg.status === 'STALE' ? 'Packaging obsoleto' : 'Vigente') : 'Falta packaging' });
+  items.push({ category: 'Packaging', id: 'packaging_current', label: 'Packaging vigente', pass: !!pkg && pkg.status !== 'STALE' && pkg.lineage && pkg.lineage.contentDnaVersion === (dna ? dna.version : null) && pkg.lineage.scriptureId === (sc ? sc.id : null) && pkg.lineage.trackPlanVersion === (approvedTracks.length ? Math.max(...approvedTracks.map((t) => t.trackPlanVersion || 0)) : null) && (pkg.lineage.visualMasterReferenceId || null) === (master ? master.id : null), detail: pkg ? (pkg.status === 'STALE' ? 'Packaging obsoleto' : 'Vigente') : 'Falta packaging' });
 
   items.push({ category: 'Compliance', id: 'rights_metadata', label: 'Metadatos de derechos/fuente completos', pass: !!ws.rightsMetadata, detail: ws.rightsMetadata ? 'Completados' : 'Falta registrar derechos/fuente' });
   items.push({ category: 'Compliance', id: 'ai_disclosure', label: 'Divulgación IA según plataforma', pass: ws.aiDisclosure === true, detail: ws.aiDisclosure === true ? 'Declarada' : 'Falta marcar divulgación IA' });
@@ -84,7 +84,7 @@ function evaluate(workspaceId) {
 }
 
 function approve(workspaceId) {
-  const latest = db.where('review_items', (r) => r.workspaceId === workspaceId).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
+  const latest = latestReview(workspaceId);
   if (!latest || latest.status !== 'READY_FOR_REVIEW') throw new Error('No puedes aprobar: la revisión debe estar READY_FOR_REVIEW.');
   const row = db.insert('review_items', {
     workspaceId,
@@ -100,7 +100,7 @@ function approve(workspaceId) {
 }
 
 function reject(workspaceId, note) {
-  const latest = db.where('review_items', (r) => r.workspaceId === workspaceId).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
+  const latest = latestReview(workspaceId);
   const row = db.insert('review_items', {
     workspaceId,
     status: 'REJECTED',
@@ -118,7 +118,14 @@ function status(workspaceId) {
 }
 
 function latest(workspaceId) {
-  return db.where('review_items', (r) => r.workspaceId === workspaceId).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0] || null;
+  return latestReview(workspaceId);
+}
+
+function latestReview(workspaceId) {
+  return db.where('review_items', (r) => r.workspaceId === workspaceId).reduce((current, row) => {
+    if (!current || new Date(row.createdAt) >= new Date(current.createdAt)) return row;
+    return current;
+  }, null);
 }
 
 module.exports = { evaluate, approve, reject, status, latest };

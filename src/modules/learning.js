@@ -19,10 +19,16 @@ function scriptureFromSnapshot(snapshot) {
   const id = snapshot && snapshot.artifacts ? snapshot.artifacts.scriptureId : null;
   return id ? db.get('scriptures', id) : null;
 }
+function packagingFromSnapshot(snapshot) {
+  const artifacts = snapshot && snapshot.artifacts;
+  if (!artifacts || artifacts.packagingVersion == null) return null;
+  return db.where('packaging_versions', (p) => p.workspaceId === snapshot.workspaceId && Number(p.version) === Number(artifacts.packagingVersion))[0] || null;
+}
 function combinationFromPublication(snapshot) {
-  const dna = contentDnaFromSnapshot(snapshot); const sc = scriptureFromSnapshot(snapshot);
+  const artifacts = snapshot && snapshot.artifacts ? snapshot.artifacts : {};
+  const dna = contentDnaFromSnapshot(snapshot); const sc = scriptureFromSnapshot(snapshot); const packaging = packagingFromSnapshot(snapshot);
   if (!dna) return null;
-  return { moment: dna.moment, need: dna.humanNeed, scriptureBook: sc ? sc.book : '', scriptureReference: sc ? sc.reference : '', soundSeed: dna.soundSeed, vocalMode: dna.vocalMode, packagingFormula: dna.packagingFormula };
+  return { contentDnaVersion: dna.version, moment: dna.moment, need: dna.humanNeed, scriptureId: artifacts.scriptureId || null, scriptureBook: sc ? sc.book : '', scriptureReference: sc ? sc.reference : '', soundSeed: dna.soundSeed, vocalMode: dna.vocalMode, packagingFormula: dna.packagingFormula, trackPlanVersion: artifacts.trackPlanVersion || null, trackCount: Array.isArray(artifacts.tracks) ? artifacts.tracks.length : 0, packagingVersion: artifacts.packagingVersion || null, title: packaging ? packaging.title : '', thumbnailAssetId: artifacts.visual && artifacts.visual.assetId ? artifacts.visual.assetId : null, thumbnailVersion: artifacts.visual && artifacts.visual.assetVersion ? artifacts.visual.assetVersion : null };
 }
 function combinationOf(workspaceId) {
   const pub = db.where('publication_snapshots', (p) => p.workspaceId === workspaceId).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
@@ -32,7 +38,7 @@ function combinationOf(workspaceId) {
 function buildObservations() {
   const pubs = db.where('publication_snapshots', (p) => p.url || p.youtubeVideoId);
   pubs.forEach((p) => {
-    const snaps = analyticsModule.snapshots(p.workspaceId).filter((s) => !s.publicationSnapshotId || s.publicationSnapshotId === p.id);
+    const snaps = analyticsModule.snapshots(p.workspaceId).filter((s) => s.publicationSnapshotId === p.id);
     if (!snaps.length) return;
     const combo = combinationFromPublication(p); if (!combo) return;
     const latest = snaps[snaps.length - 1];
@@ -47,9 +53,9 @@ function aggregate(workspaceId) {
   rows.forEach((o) => { const key = o.combinationKey; if (!groups[key]) groups[key] = { combination: o.combination, observations: [] }; groups[key].observations.push(o); });
   const out = [];
   Object.keys(groups).forEach((key) => {
-    const g = groups[key]; const views = g.observations.map((o) => o.views || 0); const count = g.observations.length; const avg = views.length ? views.reduce((a, b) => a + b, 0) / views.length : 0; const baseline = analyticsModule.comparableBaseline(workspaceId || g.observations[0].workspaceId, 'views'); const index = baseline ? avg / baseline : null; const evidence = experiments.evidenceLevel(count);
+    const g = groups[key]; const views = g.observations.map((o) => o.views || 0); const count = g.observations.length; const avg = views.length ? views.reduce((a, b) => a + b, 0) / views.length : 0; const baseline = analyticsModule.comparableBaseline(workspaceId || g.observations[0].workspaceId, 'views'); const index = baseline ? avg / baseline : null; const evidence = experiments.evidenceLevel(count); const evidencePublicationSnapshotIds = g.observations.map((o) => o.publicationSnapshotId).filter(Boolean);
     let recommendation = 'TEST'; if (count >= 3 && index != null) recommendation = index >= 1.25 ? 'REPEAT' : index >= 0.75 ? 'EXPAND' : 'RETIRE'; else if (count >= 1 && index != null && index >= 1.25) recommendation = 'TEST';
-    const pattern = { combination: g.combination, performanceIndex: index, confidence: evidence, evidenceCount: count, recommendation, latestViews: avg }; out.push(pattern);
+    const pattern = { combination: g.combination, performanceIndex: index, confidence: evidence, evidenceCount: count, evidencePublicationSnapshotIds, recommendation, latestViews: avg }; out.push(pattern);
     if (evidence === 'STRONG_PATTERN' || evidence === 'CANDIDATE_RULE') { const exists = db.where('learning_patterns', (p) => p.combinationKey === key); if (!exists.length) db.insert('learning_patterns', Object.assign({}, pattern, { combinationKey: key })); }
   });
   db.persist(); return out.sort((a, b) => (b.performanceIndex || 0) - (a.performanceIndex || 0));
@@ -64,9 +70,10 @@ function diversity(workspaceId) {
   const combo = combinationOf(workspaceId); if (!combo) return { flag: null, count: 0 }; const all = db.all('workspaces').map((ws) => combinationOf(ws.id)).filter(Boolean); const similar = all.filter((c) => c.moment === combo.moment && c.need === combo.need && c.scriptureBook === combo.scriptureBook && c.soundSeed === combo.soundSeed); const threshold = config.experimentRules().diversity.flagThreshold; const flag = similar.length >= threshold ? 'HIGH_REPETITION' : null; const adjacent = []; if (flag) { if (combo.scriptureBook === 'Salmos') adjacent.push('Proverbios', 'Isaías', 'Mateo'); else adjacent.push('Salmos'); combo.moment !== 'evening' && adjacent.push('momento: evening'); } return { flag, count: similar.length, threshold, adjacent: [...new Set(adjacent)] };
 }
 async function recommendNext(workspaceId, opts = {}) {
+  if (!db.get('workspaces', workspaceId)) throw new Error('Workspace no encontrado.');
   const patterns = aggregate(); const winning = patterns.find((p) => p.recommendation === 'REPEAT') || patterns[0]; let learningContext = '';
-  if (winning) learningContext = [`Combinación ganadora: ${winning.combination.moment} + ${winning.combination.need} + ${winning.combination.scriptureReference} + ${winning.combination.soundSeed}`, `Recomendación: ${winning.recommendation}`, 'Genera variaciones coherentes, no copies exacto.'].join('\n');
-  const variations = winning ? variationsOf(winning) : []; const idea = await ideas.generate({ type: 'learning-recommendation', learningContext, workspaceId, offline: opts.offline }); return { idea, learningContext, variations, winningPattern: winning || null };
+  if (winning) learningContext = [`Combinación ganadora: ${winning.combination.moment} + ${winning.combination.need} + ${winning.combination.scriptureReference} + ${winning.combination.soundSeed}`, `Recomendación: ${winning.recommendation}`, `Evidencia: ${winning.evidenceCount} publicación(es) (${winning.evidencePublicationSnapshotIds.join(', ')})`, 'La recomendación es advisory: genera una variación y no modifiques publicaciones históricas.'].join('\n');
+  const variations = winning ? variationsOf(winning) : []; const idea = await ideas.generate({ type: 'learning-recommendation', learningContext, workspaceId, offline: opts.offline }); return { recommendationId: 'learning-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8), targetWorkspaceId: workspaceId, advisory: true, evidencePublicationSnapshotIds: winning ? winning.evidencePublicationSnapshotIds : [], idea, learningContext, variations, winningPattern: winning || null };
 }
 function patterns() { return db.all('learning_patterns').sort((a, b) => (b.performanceIndex || 0) - (a.performanceIndex || 0)); }
 module.exports = { buildObservations, aggregate, variationsOf, diversity, recommendNext, patterns, combinationOf, combinationFromPublication };

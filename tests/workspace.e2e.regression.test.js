@@ -16,24 +16,24 @@ db.init(file);
 
 function seedGraph(workspaceId, version, scriptureId) {
   const track = db.insert('tracks', { workspaceId, number: 1, title: 'Track ' + version, trackPlanVersion: version, contentDnaVersion: version, scriptureId, status: 'APPROVED' });
-  const lyric = db.insert('lyrics_versions', { workspaceId, trackId: track.id, version, lyrics: 'test', status: 'APPROVED', lineage: { workspaceId, contentDnaVersion: version, scriptureId, trackPlanVersion: version } });
-  const music = db.insert('music_generations', { workspaceId, trackId: track.id, lyricsVersion: lyric.version, assetUrl: 'https://audio.example/' + version, status: 'SUCCEEDED', lineage: { workspaceId, contentDnaVersion: version, scriptureId, trackPlanVersion: version } });
-  const visual = db.insert('visual_assets', { workspaceId, version, prompt: 'two characters', assetUrl: 'https://image.example/' + version, status: 'APPROVED' });
-  const pkg = db.insert('packaging_versions', { workspaceId, version, title: 'Title ' + version, description: 'Description', tags: ['jazz'], thumbnailPrompt: 'two characters', status: 'APPROVED', lineage: { workspaceId, contentDnaVersion: version, scriptureId } });
+  const lyric = db.insert('lyrics_versions', { workspaceId, trackId: track.id, version, lyrics: 'test', status: 'APPROVED', lineage: { workspaceId, trackId: track.id, contentDnaVersion: version, scriptureId, trackPlanVersion: version, lyricsVersion: version } });
+  const music = db.insert('music_generations', { workspaceId, trackId: track.id, lyricsVersion: lyric.version, assetUrl: 'https://audio.example/' + version, status: 'SUCCEEDED', lineage: { workspaceId, trackId: track.id, contentDnaVersion: version, scriptureId, trackPlanVersion: version, lyricsVersion: lyric.version, musicGenerationId: null } });
+  const visual = db.insert('visual_assets', { workspaceId, version, prompt: 'two characters', assetUrl: 'https://image.example/' + version, status: 'APPROVED', lineage: { workspaceId, contentDnaVersion: version, scriptureId, visualMasterReferenceId: null, visualAssetVersion: version } });
+  const pkg = db.insert('packaging_versions', { workspaceId, version, title: 'Title ' + version, description: 'Description', tags: ['jazz'], thumbnailPrompt: 'two characters', status: 'APPROVED', lineage: { workspaceId, contentDnaVersion: version, scriptureId, trackPlanVersion: version, visualMasterReferenceId: null } });
   return { track, lyric, music, visual, pkg };
 }
 
-function approve(workspaceId, version, scriptureId, graph) {
+function approve(workspaceId, contentDnaVersion, scriptureId, graph, trackPlanVersion = contentDnaVersion) {
   return db.insert('review_items', { workspaceId, status: 'APPROVED', lineage: {
     workspaceId,
-    contentDnaVersion: version,
+    contentDnaVersion,
     scriptureId,
-    trackPlanVersion: version,
+    trackPlanVersion,
     packagingVersion: graph.pkg.version,
     visualMasterReferenceId: null,
     visualAssetId: graph.visual.id,
     visualAssetVersion: graph.visual.version,
-    tracks: [{ trackId: graph.track.id, trackPlanVersion: version, lyricsVersion: graph.lyric.version, musicGenerationId: graph.music.id }]
+    tracks: [{ trackId: graph.track.id, trackPlanVersion, lyricsVersion: graph.lyric.version, musicGenerationId: graph.music.id }]
   }});
 }
 
@@ -66,10 +66,11 @@ try {
   // trackPlanVersion advances independently after the scripture mutation.
   graph2.track.contentDnaVersion = 1;
   db.update('tracks', graph2.track.id, { contentDnaVersion: 1 });
-  db.update('lyrics_versions', graph2.lyric.id, { lineage: { workspaceId, contentDnaVersion: 1, scriptureId: scriptureB.id, trackPlanVersion: 2 } });
-  db.update('music_generations', graph2.music.id, { lineage: { workspaceId, contentDnaVersion: 1, scriptureId: scriptureB.id, trackPlanVersion: 2 } });
-  db.update('packaging_versions', graph2.pkg.id, { lineage: { workspaceId, contentDnaVersion: 1, scriptureId: scriptureB.id } });
-  approve(workspaceId, 1, scriptureB.id, graph2);
+  db.update('lyrics_versions', graph2.lyric.id, { lineage: { workspaceId, trackId: graph2.track.id, contentDnaVersion: 1, scriptureId: scriptureB.id, trackPlanVersion: 2, lyricsVersion: graph2.lyric.version } });
+  db.update('music_generations', graph2.music.id, { lineage: { workspaceId, trackId: graph2.track.id, contentDnaVersion: 1, scriptureId: scriptureB.id, trackPlanVersion: 2, lyricsVersion: graph2.lyric.version, musicGenerationId: graph2.music.id } });
+  db.update('visual_assets', graph2.visual.id, { lineage: { workspaceId, contentDnaVersion: 1, scriptureId: scriptureB.id, visualMasterReferenceId: null, visualAssetVersion: graph2.visual.version } });
+  db.update('packaging_versions', graph2.pkg.id, { lineage: { workspaceId, contentDnaVersion: 1, scriptureId: scriptureB.id, trackPlanVersion: 2, visualMasterReferenceId: null } });
+  approve(workspaceId, 1, scriptureB.id, graph2, 2);
 
   const second = publishing.publish(workspaceId, { youtubeVideoId: 'video-2', url: 'https://youtube.example/video-2' });
   assert.notStrictEqual(first.id, second.id);

@@ -8,6 +8,7 @@ const dnaModule = require('./content-dna');
 const scripture = require('./scripture');
 const tracks = require('./tracks');
 const invalidation = require('./invalidation');
+const lineage = require('./lineage');
 
 function requirePrereqs(workspaceId) {
   if (!dnaModule.getLatest(workspaceId)) throw new Error('Primero desarrolla el Content DNA.');
@@ -127,6 +128,10 @@ function approve(trackId, version) {
   if (!v) throw new Error('Versión de lyrics no encontrada.');
   const track = tracks.get(trackId);
   if (!track || track.status === 'STALE' || track.status === 'SUPERSEDED') throw new Error('No puedes aprobar lyrics de un track obsoleto.');
+  const lyricLineage = lineage.getLineage(v);
+  if (!v.lineage || lyricLineage.workspaceId !== track.workspaceId || lyricLineage.trackId !== track.id || lyricLineage.trackPlanVersion !== track.trackPlanVersion || lyricLineage.contentDnaVersion !== track.contentDnaVersion || lyricLineage.scriptureId !== track.scriptureId) {
+    throw new Error('No puedes aprobar lyrics con lineage incompatible con el track actual.');
+  }
   const approved = db.update('lyrics_versions', v.id, { status: 'APPROVED' });
   db.update('tracks', trackId, { lyrics: v.lyrics });
   db.persist();
