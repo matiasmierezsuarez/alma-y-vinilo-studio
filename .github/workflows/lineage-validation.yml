@@ -21,8 +21,18 @@ jobs:
       - name: Run lineage and acceptance regression tests
         run: |
           node tests/lineage.test.js
+          node tests/lineage.enforcement.test.js
+          node tests/dependency-resolver.contract.test.js
           node tests/invalidation.matrix.test.js
+          node tests/invalidation.track-isolation.test.js
+          node tests/impact-preview.contract.test.js
+          node tests/review.integrity.test.js
+          node tests/publish.integrity.test.js
           node tests/publication-history.test.js
+          node tests/analytics.historical.test.js
+          node tests/learning.integrity.test.js
+          node tests/studio.intelligence.test.js
           node tests/workspace.e2e.regression.test.js
           node tests/workspace.acceptance.api.test.js
           node tests/workspace.ui.contract.test.js
+          node tests/workspace.user-journey.contract.test.js

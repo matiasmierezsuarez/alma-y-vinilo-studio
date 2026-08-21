@@ -18,7 +18,7 @@ Read these repository files before changing code:
 7. the canonical final specification and lineage implementation documents already in `docs/`.
 
 CURRENT PRIORITY:
-Layer 9.2 is OPEN. A validation reported 4 functional regressions and 1 route-contract failure. Do not start Layer 9.3.
+Layer 9.2 is CLOSED after the full critical regression suite and pre-PR audit. Do not start Layer 9.3 during pre-PR closure.
 
 FIRST ACTIONS:
 1. inspect the current branch;

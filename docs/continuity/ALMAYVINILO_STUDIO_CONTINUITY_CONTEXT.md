@@ -3,7 +3,7 @@
 ## Repository
 - Repository: matiasmierezsuarez/alma-y-vinilo-studio
 - Working branch: refactor/lineage-dependency-graph
-- Current objective: finish Layer 9.2 before starting Layer 9.3.
+- Current objective: close the pre-PR audit on the completed Layer 9.2 branch without starting Layer 9.3.
 
 ## Canonical architectural objective
 The application must behave as a versioned production dependency graph:
@@ -29,13 +29,9 @@ Do not treat this as a UI-first refactor. The domain truth is lineage + dependen
 10. Confirm executes the existing domain mutation exactly once.
 
 ## Current Layer 9.2 status
-A validation run reported:
-- 4 functional regressions
-- 1 route-contract failure
+Layer 9.2 is closed. The full critical suite passes, including Preview/Invalidation parity, Track isolation, Review/Publish integrity, historical Analytics, Learning and Studio intelligence. The pre-PR audit also verifies explicit lineage and conservative legacy fallback behavior.
 
-The main blocker is lineage/invalidation scope, not the confirmation modal.
-
-Do not start Layer 9.3 until all five failures are identified, fixed, and the full regression suite passes.
+Do not start Layer 9.3 as part of this pre-PR closure task.
 
 ## Important previous implementation history
 The branch already received changes around:

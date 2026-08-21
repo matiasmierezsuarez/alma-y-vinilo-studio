@@ -1,7 +1,7 @@
 'use strict';
 
 const db = require('../db');
-const lineage = require('./lineage');
+const dependencyResolver = require('./dependency-resolver');
 
 const IMPACT = {
   CONTENT_DNA_CHANGED: ['scripture', 'trackPlan', 'track', 'lyrics', 'music', 'visual', 'packaging', 'review'],
@@ -28,18 +28,6 @@ const TABLE_BY_STAGE = {
   review: 'review_items',
 };
 
-const LINEAGE_FIELD_BY_CHANGE = {
-  CONTENT_DNA_CHANGED: 'contentDnaVersion',
-  SCRIPTURE_CHANGED: 'scriptureId',
-  TRACK_PLAN_CHANGED: 'trackPlanVersion',
-  TRACK_CHANGED: 'trackId',
-  LYRICS_CHANGED: 'lyricsVersion',
-  MUSIC_CHANGED: 'musicGenerationId',
-  VISUAL_MASTER_CHANGED: 'visualMasterReferenceId',
-  VISUAL_ASSET_CHANGED: 'visualAssetVersion',
-  PACKAGING_CHANGED: 'packagingVersion',
-};
-
 function getInvalidationImpact(changeType) {
   return [...(IMPACT[changeType] || [])];
 }
@@ -62,28 +50,7 @@ function isSourceRow(row, stage, change) {
 }
 
 function rowDependsOnChange(row, change = {}) {
-  // Without a concrete source, retain the legacy workspace-wide behavior.
-  if (!change.sourceArtifactId && change.sourceVersion == null) return true;
-
-  const artifactLineage = lineage.getLineage(row);
-  const sourceArtifactIds = artifactLineage.sourceArtifactIds || [];
-
-  if (change.sourceArtifactId) {
-    if (row.trackId === change.sourceArtifactId) return true;
-    if (artifactLineage.trackId === change.sourceArtifactId) return true;
-    if (sourceArtifactIds.includes(change.sourceArtifactId)) return true;
-    const field = LINEAGE_FIELD_BY_CHANGE[change.type];
-    if (field === 'trackId') return false;
-    if (field && artifactLineage[field] != null && change.sourceVersion != null) {
-      return String(artifactLineage[field]) !== String(change.sourceVersion);
-    }
-    return true;
-  }
-
-  const field = LINEAGE_FIELD_BY_CHANGE[change.type];
-  if (!field || artifactLineage[field] == null) return true;
-  if (change.sourceVersion == null) return true;
-  return String(artifactLineage[field]) !== String(change.sourceVersion);
+  return dependencyResolver.dependsOnChange(row, change);
 }
 
 function markRowsStale(workspaceId, stage, reason, change = {}) {

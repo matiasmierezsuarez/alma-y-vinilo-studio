@@ -11,6 +11,7 @@
 const db = require('../db');
 const { getInvalidationImpact } = require('./invalidation');
 const lineage = require('./lineage');
+const dependencyResolver = require('./dependency-resolver');
 
 const TABLE_BY_STAGE = {
   scripture: 'scriptures',
@@ -23,38 +24,8 @@ const TABLE_BY_STAGE = {
   review: 'review_items',
 };
 
-const LINEAGE_FIELD_BY_CHANGE = {
-  CONTENT_DNA_CHANGED: 'contentDnaVersion',
-  SCRIPTURE_CHANGED: 'scriptureId',
-  TRACK_PLAN_CHANGED: 'trackPlanVersion',
-  TRACK_CHANGED: 'trackId',
-  LYRICS_CHANGED: 'lyricsVersion',
-  MUSIC_CHANGED: 'musicGenerationId',
-  VISUAL_MASTER_CHANGED: 'visualMasterReferenceId',
-  VISUAL_ASSET_CHANGED: 'visualAssetVersion',
-  PACKAGING_CHANGED: 'packagingVersion',
-};
-
 function artifactDependsOnChange(artifact, change = {}) {
-  const artifactLineage = lineage.getLineage(artifact);
-  const sourceArtifactIds = artifactLineage.sourceArtifactIds || [];
-
-  if (change.sourceArtifactId) {
-    if (sourceArtifactIds.includes(change.sourceArtifactId)) return true;
-    if (artifactLineage.trackId === change.sourceArtifactId) return true;
-    const field = LINEAGE_FIELD_BY_CHANGE[change.type];
-    if (field === 'trackId') return false;
-    if (field && artifactLineage[field] != null && change.sourceVersion != null) {
-      return String(artifactLineage[field]) !== String(change.sourceVersion);
-    }
-    return true;
-  }
-
-  const field = LINEAGE_FIELD_BY_CHANGE[change.type];
-  if (!field || artifactLineage[field] == null) return true;
-
-  if (change.sourceVersion == null) return true;
-  return String(artifactLineage[field]) !== String(change.sourceVersion);
+  return dependencyResolver.dependsOnChange(artifact, change);
 }
 
 function collectStageArtifacts(workspaceId, stage) {

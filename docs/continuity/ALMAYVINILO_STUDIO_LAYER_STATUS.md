@@ -4,13 +4,9 @@
 `refactor/lineage-dependency-graph`
 
 ## Current position
-Layer 9.2 is OPEN and is the only implementation priority.
+Layer 9.2 is CLOSED after the full regression suite, route contracts, lineage enforcement, Review/Publish integrity, historical Analytics, Learning and Studio intelligence contracts passed.
 
-Latest reported validation:
-- 4 functional regressions;
-- 1 route-contract failure.
-
-The exact failing test names must be captured from the current validation output before further code changes.
+Latest validation: all critical contracts pass, including the dependency resolver parity and legacy fallback contract.
 
 ## Current priority order
 1. Diagnose the five failures exactly.
@@ -32,4 +28,4 @@ After Layer 9.2:
 7. Studio intelligence.
 
 ## Advancement rule
-No later layer starts while an earlier layer has known failing contracts unless an explicit architectural exception is documented.
+Layer 9.2 has no known blocking contracts. No new architecture is required for the pre-PR closure; any future layer must still add targeted contracts and preserve the lineage invariants.
