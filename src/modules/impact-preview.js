@@ -42,13 +42,19 @@ function artifactDependsOnChange(artifact, change = {}) {
   if (change.sourceArtifactId) {
     if (sourceArtifactIds.includes(change.sourceArtifactId)) return true;
     if (artifactLineage.trackId === change.sourceArtifactId) return true;
+    const field = LINEAGE_FIELD_BY_CHANGE[change.type];
+    if (field === 'trackId') return false;
+    if (field && artifactLineage[field] != null && change.sourceVersion != null) {
+      return String(artifactLineage[field]) !== String(change.sourceVersion);
+    }
+    return true;
   }
 
   const field = LINEAGE_FIELD_BY_CHANGE[change.type];
-  if (!field || artifactLineage[field] == null) return false;
+  if (!field || artifactLineage[field] == null) return true;
 
   if (change.sourceVersion == null) return true;
-  return String(artifactLineage[field]) === String(change.sourceVersion);
+  return String(artifactLineage[field]) !== String(change.sourceVersion);
 }
 
 function collectStageArtifacts(workspaceId, stage) {

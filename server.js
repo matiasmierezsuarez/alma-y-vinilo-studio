@@ -36,6 +36,8 @@ const workspaces = require('./src/modules/workspaces');
 const config = require('./src/config');
 const impactPreview = require('./src/modules/impact-preview');
 
+const CANONICAL_ACTION_ROUTE_FRAGMENTS = ['/ideas/', '/scripture/select', '/tracks/plan', '/visual/thumbnail'];
+
 /* Seed the research KB from the bundled benchmark summary. */
 try { research.seedBenchmarks(); } catch {}
 
@@ -156,6 +158,11 @@ async function handler(req, res, url, body) {
   }
 
   /* ---- tracks ---- */
+  if ((re = m(/^\/workspaces\/([^/]+)\/tracks\/plan$/)) && req.method === 'POST' && url.searchParams.get('preview') === '1') {
+    const workspaceId = re[1];
+    const sourceVersion = tracks.currentPlanVersion(workspaceId);
+    return ok(res, impactPreview.computeImpactPreview(workspaceId, { type: 'TRACK_PLAN_CHANGED', sourceVersion }));
+  }
   if ((re = m(/^\/workspaces\/([^/]+)\/tracks\/plan$/)) && req.method === 'POST') {
     try { return ok(res, { tracks: await tracks.plan(re[1], body || {}) }); }
     catch (e) { return fail(res, e); }
@@ -182,7 +189,11 @@ async function handler(req, res, url, body) {
 
   /* ---- music ---- */
   if ((re = m(/^\/tracks\/([^/]+)\/music\/([^/]+)\/asset$/)) && req.method === 'POST') {
-    try { return ok(res, { generation: music.recordAsset(null, re[2], body || {}) }); }
+    try {
+      const track = tracks.get(re[1]);
+      if (!track) return fail(res, new Error('Track no encontrado.'));
+      return ok(res, { generation: music.recordAsset(track.workspaceId, re[2], body || {}) });
+    }
     catch (e) { return fail(res, e); }
   }
   if ((re = m(/^\/tracks\/([^/]+)\/music$/))) {

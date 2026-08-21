@@ -16,16 +16,18 @@ function getById(table, id) {
 
 function currentArtifactSet(workspaceId, reviewRow) {
   const lineage = reviewRow.lineage || {};
-  const dna = db.allVersions('content_dna', { name: 'workspaceId', value: workspaceId }).find((x) => Number(x.version) === Number(lineage.contentDnaVersion));
+  const dna = db.where('content_dna', (x) => x.workspaceId === workspaceId && Number(x.version) === Number(lineage.contentDnaVersion))[0]
+    || db.allVersions('content_dna', { name: 'workspaceId', value: workspaceId }).find((x) => Number(x.version) === Number(lineage.contentDnaVersion));
   const sc = getById('scriptures', lineage.scriptureId);
-  const pkg = db.allVersions('packaging_versions', { name: 'workspaceId', value: workspaceId }).find((x) => Number(x.version) === Number(lineage.packagingVersion));
+  const pkg = db.where('packaging_versions', (x) => x.workspaceId === workspaceId && Number(x.version) === Number(lineage.packagingVersion))[0] || null;
   const selectedTracks = (lineage.tracks || []).map((ref) => {
     const track = getById('tracks', ref.trackId);
-    if (!track || track.status === 'STALE' || Number(track.trackPlanVersion) !== Number(ref.trackPlanVersion)) return null;
-    const lyrics = db.where('lyrics_versions', (l) => l.trackId === ref.trackId && l.status === 'APPROVED' && Number(l.version) === Number(ref.lyricsVersion) && l.lineage && Number(l.lineage.trackPlanVersion) === Number(ref.trackPlanVersion))[0] || null;
+    if (!track || track.status === 'STALE' || track.status === 'SUPERSEDED') return null;
+    const trackPlanVersion = Number(track.trackPlanVersion);
+    const lyrics = db.where('lyrics_versions', (l) => l.trackId === ref.trackId && l.status === 'APPROVED' && Number(l.version) === Number(ref.lyricsVersion) && l.lineage && Number(l.lineage.trackPlanVersion) === trackPlanVersion && l.lineage.contentDnaVersion === track.contentDnaVersion && l.lineage.scriptureId === track.scriptureId)[0] || null;
     const music = getById('music_generations', ref.musicGenerationId);
-    if (!lyrics || !music || music.status !== 'SUCCEEDED' || music.status === 'STALE') return null;
-    return { trackId: track.id, trackPlanVersion: track.trackPlanVersion, lyricsVersion: lyrics.version, musicGenerationId: music.id };
+    if (!lyrics || !music || music.status !== 'SUCCEEDED' || music.lineage?.trackPlanVersion !== trackPlanVersion || music.lineage?.contentDnaVersion !== track.contentDnaVersion || music.lineage?.scriptureId !== track.scriptureId) return null;
+    return { trackId: track.id, trackPlanVersion, lyricsVersion: lyrics.version, musicGenerationId: music.id };
   }).filter(Boolean);
   const thumbnail = getById('visual_assets', lineage.visualAssetId);
 

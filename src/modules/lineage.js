@@ -32,7 +32,15 @@ function createLineage(input = {}) {
 }
 
 function getLineage(artifact) {
-  return createLineage(artifact?.lineage || {});
+  const stored = artifact?.lineage || {};
+  const legacy = {};
+  for (const field of LINEAGE_FIELDS) {
+    if (stored[field] === undefined && artifact?.[field] !== undefined) legacy[field] = artifact[field];
+  }
+  if (stored.sourceArtifactIds === undefined && Array.isArray(artifact?.sourceArtifactIds)) {
+    legacy.sourceArtifactIds = artifact.sourceArtifactIds;
+  }
+  return createLineage(Object.assign({}, legacy, stored));
 }
 
 function compareLineage(artifact, current = {}) {
