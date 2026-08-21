@@ -24,6 +24,12 @@ function candidates({ need, moment }) {
   let list = CURATED.slice();
   if (need) list = list.filter((s) => !s.needs.length || s.needs.includes(need.toLowerCase()));
   if (moment) list = list.filter((s) => !s.moments.length || s.moments.includes(moment.toLowerCase()));
+  if (!list.length && need) list = CURATED.filter((s) => s.needs.includes(need.toLowerCase()));
+  if (list.length < 2 && need) {
+    const fallback = CURATED.filter((s) => s.needs.includes(need.toLowerCase()) && !list.some((item) => item.id === s.id));
+    list = list.concat(fallback);
+  }
+  if (!list.length) list = CURATED.slice();
   return list.map((s) => ({ id: s.id, translation: s.translation, book: s.book, chapter: s.chapter, verseStart: s.verseStart, verseEnd: s.verseEnd, reference: s.reference, theme: s.theme }));
 }
 

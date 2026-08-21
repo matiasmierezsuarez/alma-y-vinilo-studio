@@ -1,0 +1,38 @@
+name: Lineage validation
+
+on:
+  push:
+    branches:
+      - refactor/lineage-dependency-graph
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  lineage-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: Run lineage and acceptance regression tests
+        run: |
+          node tests/lineage.test.js
+          node tests/lineage.enforcement.test.js
+          node tests/dependency-resolver.contract.test.js
+          node tests/invalidation.matrix.test.js
+          node tests/invalidation.track-isolation.test.js
+          node tests/impact-preview.contract.test.js
+          node tests/review.integrity.test.js
+          node tests/publish.integrity.test.js
+          node tests/publication-history.test.js
+          node tests/analytics.historical.test.js
+          node tests/learning.integrity.test.js
+          node tests/studio.intelligence.test.js
+          node tests/workspace.e2e.regression.test.js
+          node tests/workspace.acceptance.api.test.js
+          node tests/workspace.ui.contract.test.js
+          node tests/workspace.user-journey.contract.test.js

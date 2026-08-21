@@ -326,3 +326,12 @@ table.data th { color: var(--muted); font-weight: normal; text-transform: upperc
 .badge-offline { background: #666; color: #fff; }
 
 .hint { font-size: 12px; color: var(--muted); margin: 8px 0; }
+
+
+/* Layer 9.2 — explicit impact confirmation */
+.impact-modal { display: flex; }
+.impact-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.impact-columns h4 { margin: 0 0 6px; font-size: 13px; }
+.impact-columns ul { margin: 0; padding-left: 18px; font-size: 13px; }
+.impact-error { color: var(--red); margin: 10px 0 0; }
+@media (max-width: 560px) { .impact-columns { grid-template-columns: 1fr; } }

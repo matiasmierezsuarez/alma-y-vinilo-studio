@@ -1,7 +1,7 @@
 'use strict';
-/* Analytics Engine - captures metrics linked to the exact Content DNA
-   that produced the video. Snapshots are immutable. Provides baseline
-   and performance index with heuristic bands. */
+/* Analytics Engine - metrics are linked to the immutable publication snapshot
+   whenever one exists. Current workspace state is only a fallback for
+   unpublished work. */
 
 const db = require('../db');
 const analyticsProvider = require('../providers/analytics');
@@ -9,25 +9,23 @@ const config = require('../config');
 const dnaModule = require('./content-dna');
 const scripture = require('./scripture');
 
-function capture(workspaceId, snapshot) {
-  return analyticsProvider.capture(workspaceId, snapshot);
-}
-
-function snapshots(workspaceId) {
-  return analyticsProvider.snapshotsFor(workspaceId);
-}
-
+function capture(workspaceId, snapshot) { return analyticsProvider.capture(workspaceId, snapshot); }
+function snapshots(workspaceId) { return analyticsProvider.snapshotsFor(workspaceId); }
 function captureFromCsv(workspaceId, text) {
   const parsed = analyticsProvider.parseCsv(text);
   if (!parsed) throw new Error('No se pudo interpretar el CSV.');
   return analyticsProvider.capture(workspaceId, Object.assign(parsed, { kind: 'custom', capturedAt: new Date().toISOString() }));
 }
-
-/* Comparable baseline: same channel, same content type, comparable age.
-   Uses other published workspaces with snapshots; falls back to the
-   workspace's own average when there is no comparable set. */
+function latestPublication(workspaceId) {
+  return db.where('publication_snapshots', (p) => p.workspaceId === workspaceId)
+    .sort((a, b) => new Date(a.publishDate || a.createdAt) - new Date(b.publishDate || b.createdAt)).pop() || null;
+}
+function resolveDnaVersion(workspaceId, version) {
+  if (version == null) return null;
+  return db.allVersions('content_dna', { name: 'workspaceId', value: workspaceId })
+    .find((x) => Number(x.version) === Number(version)) || null;
+}
 function comparableBaseline(workspaceId, metric) {
-  const ws = db.get('workspaces', workspaceId);
   const pubs = db.where('publication_snapshots', (p) => p.workspaceId !== workspaceId && p.url);
   const candidates = [];
   pubs.forEach((p) => {
@@ -42,7 +40,6 @@ function comparableBaseline(workspaceId, metric) {
   if (own.length) return own.reduce((a, b) => a + b, 0) / own.length;
   return null;
 }
-
 function labelForIndex(index) {
   const rules = config.experimentRules().baseline;
   if (index == null) return 'N/A';
@@ -51,7 +48,6 @@ function labelForIndex(index) {
   if (index < rules.bandOutlier) return 'STRONG';
   return 'OUTLIER_CANDIDATE';
 }
-
 function performance(workspaceId) {
   const snaps = analyticsProvider.snapshotsFor(workspaceId);
   const latest = snaps[snaps.length - 1];
@@ -65,28 +61,39 @@ function performance(workspaceId) {
   });
   return { snapshots: snaps, metrics, baseline: 'same channel + content type + comparable age' };
 }
-
-/* Link analytics to the exact Content DNA combination. */
-function link(workspaceId) {
-  const dna = dnaModule.getLatest(workspaceId);
-  const sc = scripture.getApproved(workspaceId);
+function dnaSummary(dna) {
+  if (!dna) return null;
+  return {
+    moment: dna.moment,
+    humanNeed: dna.humanNeed,
+    desiredEmotion: dna.desiredEmotion,
+    soundSeed: dna.soundSeed,
+    vocalMode: dna.vocalMode,
+    packagingFormula: dna.packagingFormula,
+    visualScenario: dna.visualScenario,
+    version: dna.version,
+  };
+}
+/* Link analytics to the exact published lineage. Unpublished work falls back
+   to the current workspace because no immutable publication snapshot exists. */
+function link(workspaceId, snapshotId) {
+  const publication = snapshotId ? db.get('publication_snapshots', snapshotId) : latestPublication(workspaceId);
+  if (snapshotId && (!publication || publication.workspaceId !== workspaceId)) {
+    throw new Error('El snapshot de publicación no pertenece al Workspace.');
+  }
+  const artifacts = publication && publication.artifacts ? publication.artifacts : null;
+  const dna = artifacts ? resolveDnaVersion(workspaceId, artifacts.contentDnaVersion) : dnaModule.getLatest(workspaceId);
+  const scriptureId = artifacts ? artifacts.scriptureId : null;
+  const sc = scriptureId ? db.get('scriptures', scriptureId) : scripture.getApproved(workspaceId);
   const ws = db.get('workspaces', workspaceId);
   return {
     workspaceId,
-    contentDna: dna ? {
-      moment: dna.moment,
-      humanNeed: dna.humanNeed,
-      desiredEmotion: dna.desiredEmotion,
-      soundSeed: dna.soundSeed,
-      vocalMode: dna.vocalMode,
-      packagingFormula: dna.packagingFormula,
-      visualScenario: dna.visualScenario,
-      version: dna.version,
-    } : null,
+    publicationSnapshotId: publication ? publication.id : null,
+    contentDna: dnaSummary(dna),
     scripture: sc ? { reference: sc.reference, book: sc.book, theme: sc.theme } : null,
-    series: ws.seriesId || null,
+    series: publication ? publication.series || ws.seriesId || null : ws.seriesId || null,
     duration: ws.duration || null,
   };
 }
 
-module.exports = { capture, snapshots, captureFromCsv, performance, link, comparableBaseline, labelForIndex };
+module.exports = { capture, snapshots, captureFromCsv, performance, link, latestPublication, comparableBaseline, labelForIndex };

@@ -1,13 +1,11 @@
 'use strict';
 /* Scripture Engine - human need -> candidates -> passage -> theme ->
    emotional arc -> approve. NEVER invents Scripture: if exact text is
-   unavailable, only reference + theme are stored. Approved Scripture
-   propagates to track plan, lyrics direction, track titles, description,
-   metadata and analytics tags (resolved via the workspace's approved
-   scripture id). */
+   unavailable, only reference + theme are stored. */
 
 const db = require('../db');
 const scriptureProvider = require('../providers/scripture');
+const invalidation = require('./invalidation');
 
 const ARC = {
   anxiety: ['anxiety', 'trust', 'peace'],
@@ -27,7 +25,6 @@ function candidates(workspaceId, opts = {}) {
   const need = opts.need || (dna && dna.humanNeed) || '';
   const moment = opts.moment || (dna && dna.moment) || '';
   const list = scriptureProvider.candidates({ need, moment });
-  /* keep reference-based suggestions that match the DNA's scripture hint */
   if (dna && dna.scriptureReference) {
     const hint = scriptureProvider.fromReference(dna.scriptureReference);
     if (hint && !list.find((s) => s.reference === hint.reference)) list.unshift(hint);
@@ -50,6 +47,9 @@ function select(workspaceId, reference, opts = {}) {
     reference: String(reference || '').trim(), theme: '',
   };
   const arc = emotionalArc(need);
+  const previous = getApproved(workspaceId);
+  if (previous) db.update('scriptures', previous.id, { status: 'SUPERSEDED', supersededAt: new Date().toISOString() });
+
   const row = {
     workspaceId,
     translation: base.translation || 'RVR1960',
@@ -64,19 +64,31 @@ function select(workspaceId, reference, opts = {}) {
     emotionalArc: arc,
     status: 'APPROVED',
     approvedAt: new Date().toISOString(),
+    supersedesScriptureId: previous ? previous.id : null,
+    contentDnaVersion: dna ? dna.version : null,
   };
   const stored = db.insert('scriptures', row);
   db.update('workspaces', workspaceId, { scriptureId: stored.id });
-  /* propagate to content DNA scripture reference if not set */
   if (dna && !dna.scriptureReference) {
     dna.scriptureReference = base.reference;
     db.insertVersioned('content_dna', { name: 'workspaceId', value: workspaceId }, dna);
+    db.update('workspaces', workspaceId, { contentDnaVersion: db.latestVersion('content_dna', { name: 'workspaceId', value: workspaceId }).version });
   }
   db.persist();
+  invalidation.invalidateWorkspaceArtifacts(workspaceId, {
+    type: 'SCRIPTURE_CHANGED',
+    sourceArtifactId: stored.id,
+    sourceVersion: stored.id,
+  });
   return stored;
 }
 
 function getApproved(workspaceId) {
+  const ws = db.get('workspaces', workspaceId);
+  if (ws && ws.scriptureId) {
+    const current = db.get('scriptures', ws.scriptureId);
+    if (current && current.status === 'APPROVED') return current;
+  }
   return db.where('scriptures', (s) => s.workspaceId === workspaceId && s.status === 'APPROVED').sort((a, b) => new Date(b.approvedAt) - new Date(a.approvedAt))[0] || null;
 }
 

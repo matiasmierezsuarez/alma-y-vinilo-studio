@@ -34,6 +34,9 @@ const series = require('./src/modules/series');
 const shorts = require('./src/modules/shorts');
 const workspaces = require('./src/modules/workspaces');
 const config = require('./src/config');
+const impactPreview = require('./src/modules/impact-preview');
+
+const CANONICAL_ACTION_ROUTE_FRAGMENTS = ['/ideas/', '/scripture/select', '/tracks/plan', '/visual/thumbnail'];
 
 /* Seed the research KB from the bundled benchmark summary. */
 try { research.seedBenchmarks(); } catch {}
@@ -134,7 +137,32 @@ async function handler(req, res, url, body) {
     return ok(res, { scripture: scripture.getApproved(re[1]), all: scripture.forWorkspace(re[1]) });
   }
 
+  /* ---- lineage impact preview (strictly read-only) ---- */
+  if ((re = m(/^\/workspaces\/([^/]+)\/lineage\/impact-preview$/)) && req.method === 'POST') {
+    try {
+      const workspaceId = re[1];
+      const type = body && body.type;
+      let change = { type };
+      if (type === 'CONTENT_DNA_CHANGED') {
+        const current = dnaModule.getLatest(workspaceId);
+        if (current) change = { type, sourceArtifactId: current.id, sourceVersion: current.version };
+      } else if (type === 'SCRIPTURE_CHANGED') {
+        const current = scripture.getApproved(workspaceId);
+        if (current) change = { type, sourceArtifactId: current.id, sourceVersion: current.id };
+      } else if (type === 'TRACK_PLAN_CHANGED') {
+        const currentVersion = tracks.currentPlanVersion(workspaceId);
+        change = { type, sourceVersion: currentVersion || null };
+      }
+      return ok(res, impactPreview.computeImpactPreview(workspaceId, change));
+    } catch (e) { return fail(res, e); }
+  }
+
   /* ---- tracks ---- */
+  if ((re = m(/^\/workspaces\/([^/]+)\/tracks\/plan$/)) && req.method === 'POST' && url.searchParams.get('preview') === '1') {
+    const workspaceId = re[1];
+    const sourceVersion = tracks.currentPlanVersion(workspaceId);
+    return ok(res, impactPreview.computeImpactPreview(workspaceId, { type: 'TRACK_PLAN_CHANGED', sourceVersion }));
+  }
   if ((re = m(/^\/workspaces\/([^/]+)\/tracks\/plan$/)) && req.method === 'POST') {
     try { return ok(res, { tracks: await tracks.plan(re[1], body || {}) }); }
     catch (e) { return fail(res, e); }
@@ -161,7 +189,11 @@ async function handler(req, res, url, body) {
 
   /* ---- music ---- */
   if ((re = m(/^\/tracks\/([^/]+)\/music\/([^/]+)\/asset$/)) && req.method === 'POST') {
-    try { return ok(res, { generation: music.recordAsset(null, re[2], body || {}) }); }
+    try {
+      const track = tracks.get(re[1]);
+      if (!track) return fail(res, new Error('Track no encontrado.'));
+      return ok(res, { generation: music.recordAsset(track.workspaceId, re[2], body || {}) });
+    }
     catch (e) { return fail(res, e); }
   }
   if ((re = m(/^\/tracks\/([^/]+)\/music$/))) {
@@ -233,7 +265,7 @@ async function handler(req, res, url, body) {
     return ok(res, { performance: analytics.performance(re[1]) });
   }
   if ((re = m(/^\/workspaces\/([^/]+)\/analytics\/link$/)) && req.method === 'GET') {
-    return ok(res, { link: analytics.link(re[1]) });
+    return ok(res, { link: analytics.link(re[1], url.searchParams.get('snapshotId') || null) });
   }
   if ((re = m(/^\/workspaces\/([^/]+)\/analytics\/csv$/)) && req.method === 'POST') {
     try { return ok(res, { snapshot: analytics.captureFromCsv(re[1], (body && body.csv) || '') }); }

@@ -6,6 +6,7 @@ const db = require('../db');
 const llm = require('../providers/llm');
 const config = require('../config');
 const ideas = require('./ideas');
+const invalidation = require('./invalidation');
 
 const MOMENT_SCENARIOS = {
   morning: { location: 'coffeehouse', time: 'morning', weather: 'soft rain outside the window', activity: 'reading Scripture', props: ['coffee', 'open Bible', 'stack of vinyl records'], lighting: 'warm window light' },
@@ -62,6 +63,11 @@ function develop(workspaceId, ideaId, opts = {}) {
     status: ws.status === 'NOT_STARTED' ? 'IN_PROGRESS' : ws.status,
   });
   db.persist();
+  invalidation.invalidateWorkspaceArtifacts(workspaceId, {
+    type: 'CONTENT_DNA_CHANGED',
+    sourceArtifactId: stored.id,
+    sourceVersion: stored.version,
+  });
   return stored;
 }
 
@@ -92,6 +98,11 @@ function refineVisualScenario(workspaceId, opts = {}) {
   const stored = db.insertVersioned('content_dna', { name: 'workspaceId', value: workspaceId }, dna);
   db.update('workspaces', workspaceId, { contentDnaVersion: stored.version });
   db.persist();
+  invalidation.invalidateWorkspaceArtifacts(workspaceId, {
+    type: 'CONTENT_DNA_CHANGED',
+    sourceArtifactId: stored.id,
+    sourceVersion: stored.version,
+  });
   return stored;
 }
 
@@ -121,6 +132,11 @@ function edit(workspaceId, patch) {
   const stored = db.insertVersioned('content_dna', { name: 'workspaceId', value: workspaceId }, merged);
   db.update('workspaces', workspaceId, { contentDnaVersion: stored.version });
   db.persist();
+  invalidation.invalidateWorkspaceArtifacts(workspaceId, {
+    type: 'CONTENT_DNA_CHANGED',
+    sourceArtifactId: stored.id,
+    sourceVersion: stored.version,
+  });
   return stored;
 }
 
