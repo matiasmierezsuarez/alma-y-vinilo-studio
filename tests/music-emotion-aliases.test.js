@@ -8,5 +8,7 @@ for (const emotion of ['vulnerability', 'vulnerable', 'fear', 'anxiety', 'sadnes
   assert.match(prompt, /Emotion: reflective/);
 }
 
+assert.match(music.compose('SEED_A_JAZZ_VINYL', { emotion: 'surrendered' }), /Emotion: peaceful/);
+assert.match(music.compose('SEED_A_JAZZ_VINYL', { emotion: 'future-model-emotion' }), /Emotion: reflective/);
 assert.match(music.compose('SEED_A_JAZZ_VINYL', { emotion: 'gratitude' }), /Emotion: grateful/);
 console.log('music emotion alias tests: OK');

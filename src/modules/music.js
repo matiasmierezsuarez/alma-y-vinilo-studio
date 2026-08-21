@@ -76,6 +76,11 @@ const EMOTION_MODIFIER = {
   comforted: 'comforting',
   vulnerability: 'reflective',
   vulnerable: 'reflective',
+  surrendered: 'peaceful',
+  surrender: 'peaceful',
+  surrendering: 'peaceful',
+  acceptance: 'peaceful',
+  accepted: 'peaceful',
   fear: 'reflective',
   miedo: 'reflective',
   anxiety: 'reflective',
@@ -83,10 +88,18 @@ const EMOTION_MODIFIER = {
   sadness: 'reflective',
   sad: 'reflective',
   grief: 'reflective',
+  loneliness: 'reflective',
+  lonely: 'reflective',
   culpa: 'reflective',
   guilt: 'reflective',
   anger: 'reflective',
   ira: 'reflective',
+  relief: 'peaceful',
+  relieved: 'peaceful',
+  renewal: 'hopeful',
+  renewed: 'hopeful',
+  strength: 'hopeful',
+  strengthened: 'hopeful',
   focus: 'reflective',
   rest: 'peaceful',
   calm: 'peaceful',
@@ -132,7 +145,7 @@ function normalize(value) {
 }
 
 function emotionModifier(value) {
-  return EMOTION_MODIFIER[normalize(value)] || EMOTION_MODIFIER[normalize(value).replace(/\s+/g, '_')] || value;
+  return EMOTION_MODIFIER[normalize(value)] || EMOTION_MODIFIER[normalize(value).replace(/\s+/g, '_')] || 'reflective';
 }
 
 const MOMENT_MODIFIER = {

@@ -25,6 +25,8 @@ function buildPrompt(workspaceId) {
     `Semilla de sonido: ${dna.soundSeed}`,
     `Modo vocal: ${dna.vocalMode}`,
     `Elige entre ${RECOMMENDED_RANGE.min} y ${RECOMMENDED_RANGE.max} tracks.`,
+    'Para emotionalStart y emotionalEnd usa SOLO estos estados en inglés: anxiety, trust, peace, rest, hope, comfort, patience, presence, joy, gratitude, vulnerability, surrender, relief, renewal, strength.',
+    'No inventes etiquetas emocionales nuevas. Si una emoción no encaja exactamente, elige el estado controlado más cercano.',
     'Cada track tiene un título emocional en español y una referencia de Scripture REAL y verificable; NO inventes citas.',
     'El plan debe mostrar un arco emocional de principio a fin (no canciones arbitrarias).',
     'Devuelve SOLO JSON: {"tracks":[{"title":"","purpose":"","scriptureReference":"","scriptureTheme":"","emotionalStart":"","emotionalEnd":"","lyricDirection":""}]}',
