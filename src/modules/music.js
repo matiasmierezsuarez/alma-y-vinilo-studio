@@ -45,12 +45,15 @@ function validate(seedId, mods) {
 function compose(seedId, mods = {}) {
   const seed = config.seedById(seedId);
   if (!seed) throw new Error('Semilla de sonido desconocida.');
-  const v = validate(seedId, mods);
+  const normalizedMods = Object.assign({}, mods, {
+    emotion: mods.emotion ? emotionModifier(mods.emotion) : mods.emotion,
+  });
+  const v = validate(seedId, normalizedMods);
   if (!v.ok) throw new Error('Suno prompt inválido: ' + v.errors.join(' | '));
   const parts = [seed.basePrompt];
   const order = ['moment', 'emotion', 'vocal', 'energy', 'environment'];
   order.forEach((cat) => {
-    const val = String(mods[cat] || '').trim();
+    const val = String(normalizedMods[cat] || '').trim();
     if (val) parts.push(`${cat.replace(/^./, (c) => c.toUpperCase())}: ${val}`);
   });
   return parts.join(', ');
@@ -66,10 +69,24 @@ const VOCAL_MODIFIER = {
 
 const EMOTION_MODIFIER = {
   joy: 'grateful',
+  gratitude: 'grateful',
   trust: 'hopeful',
   peace: 'peaceful',
   comfort: 'comforting',
   comforted: 'comforting',
+  vulnerability: 'reflective',
+  vulnerable: 'reflective',
+  fear: 'reflective',
+  miedo: 'reflective',
+  anxiety: 'reflective',
+  anxious: 'reflective',
+  sadness: 'reflective',
+  sad: 'reflective',
+  grief: 'reflective',
+  culpa: 'reflective',
+  guilt: 'reflective',
+  anger: 'reflective',
+  ira: 'reflective',
   focus: 'reflective',
   rest: 'peaceful',
   calm: 'peaceful',
@@ -104,7 +121,6 @@ const EMOTION_MODIFIER = {
   compania: 'comforting',
   seguridad: 'comforting',
   abrigo: 'comforting',
-  gratitud: 'grateful',
   agradecimiento: 'grateful',
   alegria: 'grateful',
   gozo: 'grateful',
