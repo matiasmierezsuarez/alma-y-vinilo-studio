@@ -22,17 +22,22 @@ function buildPrompt(workspaceId, track) {
   const moment = (dna && dna.moment) || '';
   const need = (dna && dna.humanNeed) || '';
   return [
-    'Eres un compositor cristiano que crea canciones 100% ORIGINALES para un público joven.',
-    'El canal es 100% en español latinoamericano. Escribe la letra EN ESPAÑOL, moderno, directo y con sentimiento.',
-    'Las canciones se interpretarán en versiones relajadas de jazz/soul/lofi, así que la letra debe funcionar cantada despacio y con sentimiento.',
-    'REGLAS:',
-    '- Escribe letras 100% originales. NO copies, cites ni te acerques a ninguna canción existente.',
-    '- Lenguaje moderno, directo y poético. Nada de frases religiosas forzadas ni sermones.',
-    '- Mensaje claro y un versículo como apoyo espiritual (puede citarlo al final si aporta).',
-    '- Usa imágenes concretas: luz, café, noche, ventana, lluvia, sombra, silencio.',
-    '- No repitas la misma frase más de dos veces.',
-    '- NO escribas la referencia bíblica (ej. "Salmo 25:4-5") dentro de la letra. La referencia solo informa el tema.',
-    '- Responde SOLO con la letra y los rótulos de sección entre corchetes. Sin comentarios ni explicaciones.',
+    'Actúa como compositor cristiano profesional de canciones originales en español latinoamericano.',
+    'No imites ni reproduzcas el estilo identificable de artistas concretos. Usa únicamente rasgos generales: intimidad, honestidad emocional, lenguaje cantable y fundamento bíblico.',
+    'La canción debe sonar natural en una balada contemplativa de jazz/soul/lofi, cantada despacio.',
+    'OBJETIVO: contar una escena real y específica que avance desde la emoción cruda hacia una esperanza creíble, sin negar el problema.',
+    'REGLAS DE COHERENCIA:',
+    '- Antes de escribir, define mentalmente una sola escena principal, un objeto concreto y una acción. Reutilízalos para que todos los versos pertenezcan al mismo mundo.',
+    '- Cada verso debe continuar una pequeña historia: situación inicial, tensión y respuesta. No encadenes frases bonitas sin relación causal.',
+    '- Cada línea debe expresar una sola idea y poder cantarse de corrido. Prefiere palabras comunes y verbos concretos sobre conceptos abstractos.',
+    '- Mantén entre 6 y 10 sílabas aproximadas por línea. Las líneas de una misma sección deben tener longitudes parecidas.',
+    '- Elige una terminación sonora para cada sección y repítela en al menos 2 líneas. Usa rima asonante natural; no fuerces palabras para rimar.',
+    '- El coro debe tener 4 líneas, una frase ancla memorable y una verdad bíblica clara. La frase ancla debe reaparecer en el coro final.',
+    '- Usa detalles sensoriales del momento: luz, sonido, temperatura, objetos, manos, pasos, ventana, taza, lluvia o respiración, pero sólo si pertenecen a la escena.',
+    '- Evita frases intelectuales, metáforas mezcladas, abstracciones acumuladas y afirmaciones que no conecten con la línea anterior.',
+    '- Escribe letras 100% originales. No copies, cites ni imites canciones existentes.',
+    '- Integra el sentido del pasaje bíblico de forma orgánica. No escribas la referencia bíblica dentro de la letra.',
+    '- No agregues explicaciones, análisis, notas de métrica ni comentarios fuera de la letra.',
     '',
     `Título del track: ${track.title}`,
     `Tema / mensaje: ${track.scriptureTheme}`,
@@ -43,8 +48,9 @@ function buildPrompt(workspaceId, track) {
     `Necesidad del oyente: ${need}`,
     `Hook / dirección: ${track.lyricDirection}`,
     '',
-    'Estructura: [Intro], [Verso 1], [Pre-coro], [Coro], [Verso 2], [Puente], [Coro final].',
-    'Coro memorable y fácil de cantar. Versos de 4-6 líneas. Coro de 4 líneas.',
+    'ESTRUCTURA OBLIGATORIA: [Intro], [Verso 1], [Verso 2], [Pre-coro], [Coro], [Puente], [Coro final].',
+    'Cada verso y el puente deben tener 4-6 líneas. El pre-coro debe tener 2-4 líneas. El coro y el coro final deben tener exactamente 4 líneas.',
+    'AUTOCHEQUEO ANTES DE RESPONDER: comprueba que cada verso continúa la misma escena, que las líneas de cada sección tienen longitud parecida, que hay rimas naturales y que el coro puede recordarse después de una escucha.',
     'Devuelve SOLO JSON: {"lyrics":"...texto completo con secciones en corchetes..."}',
   ].join('\n');
 }
@@ -87,6 +93,16 @@ function sanitizeLyrics(raw) {
     .replace(/\[Final\]/gi, '[Final]');
 }
 
+function hasUsableStructure(lyrics) {
+  const text = String(lyrics || '').trim();
+  const required = ['[Verso 1]', '[Verso 2]', '[Pre-coro]', '[Coro]', '[Puente]', '[Coro final]'];
+  if (!required.every((section) => text.includes(section))) return false;
+  const sections = text.split(/(?=\[(?:Intro|Verso \d|Pre-coro|Coro(?: final)?|Puente|Final)\])/i).filter(Boolean);
+  const contentSections = sections.filter((section) => !/^\[Intro\]/i.test(section));
+  if (contentSections.length < 6) return false;
+  return contentSections.every((section) => section.split('\n').slice(1).map((line) => line.trim()).filter(Boolean).length >= 2);
+}
+
 async function generate(trackId, opts = {}) {
   const track = tracks.get(trackId);
   if (!track) throw new Error('Track no encontrado.');
@@ -99,6 +115,7 @@ async function generate(trackId, opts = {}) {
         { temperature: 0.82, model: opts.model }
       );
       lyrics = sanitizeLyrics(data.lyrics);
+      if (!hasUsableStructure(lyrics)) lyrics = '';
     } catch {
       lyrics = '';
     }
@@ -136,4 +153,4 @@ function approvedForWorkspace(workspaceId) {
   return db.where('lyrics_versions', (l) => l.workspaceId === workspaceId && l.status === 'APPROVED');
 }
 
-module.exports = { generate, approve, versionsForTrack, latestForTrack, approvedForWorkspace };
+module.exports = { generate, approve, versionsForTrack, latestForTrack, approvedForWorkspace, buildPrompt, fallbackLyrics, sanitizeLyrics, hasUsableStructure };
